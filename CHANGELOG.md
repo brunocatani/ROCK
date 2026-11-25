@@ -6,9 +6,10 @@
 
 - **Hinges and sliders from other mods work.** Doors and drawers the game animates
   can be taken: ROCK held them as a fixed surface instead. They stay exactly on
-  their hinge or rail and follow the hand, which no longer pushes them back, up to
-  their own stops, and they are drawn where they are while held. A slider's limit
-  worked across its rail and a hinge's range was mirrored.
+  their hinge or rail and follow the hand up to their own stops. The holding hand
+  and arm, the cabinet and the floor no longer block them, and they are drawn
+  exactly where they are while held. A slider's limit worked across its rail and a
+  hinge's range was mirrored.
 - **A held surface that turns keeps the hand on the same spot.**
 - **A pulled object comes to the hand by the point ROCK chose.** That point drifted
   as the object turned in flight, more the longer the object.

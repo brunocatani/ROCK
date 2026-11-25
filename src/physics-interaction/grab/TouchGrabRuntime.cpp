@@ -19,6 +19,7 @@
 #include "physics-interaction/native/query/PhysicsShapeCast.h"
 #include "physics-interaction/native/scene/ReferenceInteraction.h"
 #include "physics-interaction/object/PhysicsBodyClassifier.h"
+#include "rock_support/Fo4VrRuntime.h"
 
 #include "RE/Bethesda/bhkCharacterController.h"
 #include "RE/Havok/hknpBody.h"
@@ -518,6 +519,8 @@ namespace rock
         }
         outReport.globalSurface = active->globalSurface;
         outReport.kind = active->target.kind;
+        outReport.keyframedMechanism = active->target.kind != ::rock::api::touch::TouchGrabKind::FixedAnchor &&
+            active->originalMotionClass == provider::TouchGrabMotionClass::Keyframed;
         outReport.bodyId = active->bodyId;
         outReport.referenceFormId = active->target.referenceFormId;
         outReport.referenceNativeHandle = active->target.referenceNativeHandle;
@@ -1268,10 +1271,13 @@ namespace rock
                 havok_runtime::activateBody(hknpWorld, active.bodyId);
                 driveMechanism(active, rightTrackedHandWorld, leftTrackedHandWorld);
                 // The engine writes a dynamic body onto its node only when the node updates, and
-                // nothing updates a fixed prop's node.
+                // nothing updates a fixed prop's node. It skips the world transform when no matrix
+                // element moved by 0.01 (0x1E06B00), so the world is taken from the local it wrote.
                 if (auto* node = active.collisionObject->sceneObject) {
                     RE::NiUpdateData update{};
                     node->UpdateTransforms(update);
+                    f4vr::updateTransforms(node);
+                    f4vr::updateDown(node, false);
                 }
             }
             publishState(active, ::rock::api::touch::TouchGrabPhase::Held,

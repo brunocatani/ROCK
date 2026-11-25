@@ -485,24 +485,30 @@ namespace rock::native_player_collision
         }
 
         template <std::size_t N>
-        std::uint8_t heldExclusionMask(const std::array<HeldExclusionBody, N>& bodies, std::size_t count,
+        HeldExclusionBody heldExclusion(const std::array<HeldExclusionBody, N>& bodies, std::size_t count,
             std::uint32_t id) noexcept
         {
             const auto end = bodies.begin() + count;
             const auto found = std::lower_bound(bodies.begin(), end, id,
                 [](const HeldExclusionBody& body, std::uint32_t candidate) { return body.bodyId < candidate; });
-            return found != end && found->bodyId == id ? found->handMask : 0;
+            return found != end && found->bodyId == id ? *found : HeldExclusionBody{};
         }
 
-        bool suppressHeldExclusionPair(const BodyPair& pair) noexcept
+        bool suppressHeldExclusionPair(const BodyPair& pair, PairReads& reads) noexcept
         {
             const auto& set = s_heldExclusions;
-            const auto colliderA = heldExclusionMask(set.colliders, set.colliderCount, pair.bodyA);
-            const auto colliderB = heldExclusionMask(set.colliders, set.colliderCount, pair.bodyB);
-            if (!colliderA && !colliderB)
+            const auto heldA = heldExclusion(set.held, set.heldCount, pair.bodyA);
+            const auto heldB = heldExclusion(set.held, set.heldCount, pair.bodyB);
+            if (!heldA.handMask && !heldB.handMask)
                 return false;
-            return suppressHeldExclusionContact(colliderA, heldExclusionMask(set.held, set.heldCount, pair.bodyA),
-                colliderB, heldExclusionMask(set.held, set.heldCount, pair.bodyB));
+            if (suppressHeldExclusionContact(
+                    heldExclusion(set.colliders, set.colliderCount, pair.bodyA).handMask, heldA.handMask,
+                    heldExclusion(set.colliders, set.colliderCount, pair.bodyB).handMask, heldB.handMask))
+                return true;
+            if (heldA.passesStatic == heldB.passesStatic)
+                return false;
+            const auto& other = heldA.passesStatic ? reads.b() : reads.a();
+            return other.valid && other.body && (other.body->flags & 1u) != 0;
         }
 
         // hknpBody flag 1: static. The bodies are read only for a listed body's pairs.
@@ -662,7 +668,7 @@ namespace rock::native_player_collision
                     ++weaponHandRejected;
                     return true;
                 }
-                if (heldExclusions && suppressHeldExclusionPair(pair))
+                if (heldExclusions && suppressHeldExclusionPair(pair, reads))
                     return true;
                 if (staticPass && suppressStaticPassPair(pair, reads)) {
                     s_staticPassRejected.fetch_add(1, std::memory_order_relaxed);

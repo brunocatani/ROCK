@@ -73,6 +73,7 @@ namespace rock::native_player_collision
     {
         std::uint32_t bodyId{ 0x7FFF'FFFFu };
         std::uint8_t handMask{ 0 };
+        bool passesStatic{ false }; // Held body only: its pairs with static bodies are removed too.
         bool operator==(const HeldExclusionBody&) const = default;
     };
 

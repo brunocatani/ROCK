@@ -422,9 +422,9 @@ namespace rock
             }
         }
         /*
-         * A hinge or slider moves with the hand that holds it: that hand's and
-         * arm's colliders start inside its collision and would push it back
-         * against the pull. Only their pairs with that body drop.
+         * A hinge or slider moves with the hand that holds it: that hand and its
+         * whole arm, whose elbow follows the hand, would push it back against
+         * the pull. Only their pairs with that body drop; the torso still blocks.
          */
         for (const bool isLeft : { false, true }) {
             TouchGrabRuntime::HandReport report{};
@@ -440,9 +440,7 @@ namespace rock
                 const auto bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
                 BodyBoneColliderMetadata metadata{};
                 if (_bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) && metadata.valid &&
-                    metadata.side == ownSide &&
-                    (metadata.role == body_collider::Role::ForearmSegment ||
-                        metadata.role == body_collider::Role::HandSegment)) {
+                    metadata.side == ownSide) {
                     add(colliders, colliderCount, bodyId, bit);
                 }
             }
@@ -458,6 +456,12 @@ namespace rock
                 add(colliders, colliderCount, proxyId, bit);
             }
             add(held, heldCount, report.bodyId, bit);
+            // Keyframed, it never collided with its cabinet, frame or floor; held, it still must not.
+            for (std::size_t i = 0; i < heldCount; ++i) {
+                if (held[i].bodyId == report.bodyId) {
+                    held[i].passesStatic = report.keyframedMechanism;
+                }
+            }
         }
         native_player_collision::publishHeldExclusions(world, std::span(colliders).first(colliderCount),
             std::span(held).first(heldCount));

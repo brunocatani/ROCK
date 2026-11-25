@@ -54,6 +54,7 @@ namespace rock
             bool globalSurface = false;
             bool commandOwned = false;
             bool hasSurfaceAnchor = false;
+            bool keyframedMechanism = false; // A hinge or slider that was keyframed before it was held.
             ::rock::api::touch::TouchGrabKind kind{ ::rock::api::touch::TouchGrabKind::FixedAnchor };
             ::rock::api::touch::SurfaceGripMode surfaceGripMode{ ::rock::api::touch::SurfaceGripMode::CollisionAnchor };
             std::uint32_t bodyId = 0x7FFF'FFFFu;
