@@ -1019,16 +1019,16 @@ namespace rock
         if (heldContactSnapshot.recent) {
             const RE::NiPoint3 correctionGame = update.desiredTargetPointWorld - update.liveGripWorldForAuthority;
             const RE::NiPoint3 correctionHavok = gamePointToHavokPoint(correctionGame);
-            RE::NiTransform heldContactBodyWorld{};
-            RE::NiTransform otherContactBodyWorld{};
+            RE::NiPoint3 heldContactCenter{};
+            RE::NiPoint3 otherContactCenter{};
             const bool hasHeldContactBody = heldContactSnapshot.heldBodyId != INVALID_BODY_ID &&
-                tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ heldContactSnapshot.heldBodyId },
-                    heldContactBodyWorld);
+                havok_runtime::tryGetBodyCenterWorld(world, RE::hknpBodyId{ heldContactSnapshot.heldBodyId },
+                    heldContactCenter);
             const bool hasOtherContactBody = heldContactSnapshot.otherBodyId != INVALID_BODY_ID &&
-                tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ heldContactSnapshot.otherBodyId },
-                    otherContactBodyWorld);
+                havok_runtime::tryGetBodyCenterWorld(world, RE::hknpBodyId{ heldContactSnapshot.otherBodyId },
+                    otherContactCenter);
             const RE::NiPoint3 heldToOtherHavok = (hasHeldContactBody && hasOtherContactBody)
-                ? gamePointToHavokPoint(otherContactBodyWorld.translate - heldContactBodyWorld.translate)
+                ? gamePointToHavokPoint(otherContactCenter - heldContactCenter)
                 : RE::NiPoint3{};
             const auto contactSoftening = held_object_contact_policy::evaluateHeldContactMotorSoftening(
                 held_object_contact_policy::HeldContactMotorSofteningInput<RE::NiPoint3>{

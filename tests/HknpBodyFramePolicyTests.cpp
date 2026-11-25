@@ -1,5 +1,7 @@
 #include "physics-interaction/PhysicsBodyFrame.h"
 #include "physics-interaction/TransformMath.h"
+#include "physics-interaction/grab/TouchGrabMath.h"
+#include "physics-interaction/native/havok/HavokTransform.h"
 #include "physics-interaction/weapon/collision/LooseWeaponCollisionPolicy.h"
 
 #include "RE/NetImmerse/NiMatrix3.h"
@@ -9,6 +11,11 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
+
+namespace rock::physics_scale
+{
+    float gameToHavok() { return kNominalGameToHavok; }
+}
 
 namespace
 {
@@ -168,6 +175,87 @@ int main()
     if ((wrongCentre - meshCentreWorld).Length() < 1.0f) {
         std::puts("shared MOTION unexpectedly matched an offset shape BODY");
         ok = false;
+    }
+    // A point or hinge direction stored on a body must turn with it. The body is turned between
+    // the store and the read: with no turn in between, a transposed or mass-frame readback
+    // returns the same point and looks right.
+    struct NativeBody
+    {
+        float blocks[16]{};
+        RE::NiTransform massFrame = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+    };
+    const auto rotateZ = [](const RE::NiPoint3& v, float angle) {
+        const float c = std::cos(angle);
+        const float s = std::sin(angle);
+        return RE::NiPoint3{ c * v.x - s * v.y, s * v.x + c * v.y, v.z };
+    };
+    const RE::NiPoint3 hinge{ 12.0f, -7.0f, 30.0f };
+    const RE::NiPoint3 comLocal{ 4.0f, 9.0f, -2.0f };
+    // Principal inertia axes in body space: a rotation about X that a box-aligned body lacks.
+    constexpr float massCos = 0.8f;
+    constexpr float massSin = 0.6f;
+    const RE::NiPoint3 massAxes[3]{ { 1, 0, 0 }, { 0, massCos, massSin }, { 0, -massSin, massCos } };
+    const auto makeBody = [&](float angle) {
+        NativeBody body{};
+        for (int axis = 0; axis < 3; ++axis) {
+            const auto turned =
+                rotateZ({ bodyFloats[axis * 4], bodyFloats[axis * 4 + 1], bodyFloats[axis * 4 + 2] }, angle);
+            body.blocks[axis * 4] = turned.x;
+            body.blocks[axis * 4 + 1] = turned.y;
+            body.blocks[axis * 4 + 2] = turned.z;
+        }
+        const auto origin = hinge + rotateZ(translationGame - hinge, angle);
+        body.blocks[12] = origin.x;
+        body.blocks[13] = origin.y;
+        body.blocks[14] = origin.z;
+        body.massFrame.translate = nativeBodyLocalPointToWorldGame(body.blocks, comLocal, origin);
+        for (int axis = 0; axis < 3; ++axis) {
+            const auto world = nativeBodyLocalPointToWorldGame(body.blocks, massAxes[axis], RE::NiPoint3{});
+            body.massFrame.rotate.entry[0][axis] = world.x;
+            body.massFrame.rotate.entry[1][axis] = world.y;
+            body.massFrame.rotate.entry[2][axis] = world.z;
+        }
+        return body;
+    };
+    const auto bodyFrame = [](const NativeBody& body) {
+        auto frame = rock::transform_math::makeIdentityTransform<RE::NiTransform>();
+        frame.rotate = rock::transform_math::hknpBodyColumnsToNiStoredAxes<RE::NiMatrix3>(body.blocks);
+        frame.translate = { body.blocks[12], body.blocks[13], body.blocks[14] };
+        return frame;
+    };
+    constexpr float turn = 0.7f;
+    const auto atRest = makeBody(0.0f);
+    const auto turnedBody = makeBody(turn);
+    const RE::NiPoint3 gripPoint{ 25.0f, 14.0f, 41.0f };
+    const auto gripAfterTurn = hinge + rotateZ(gripPoint - hinge, turn);
+    const auto carried = [&](const RE::NiTransform& store, const RE::NiTransform& read) {
+        return rock::transform_math::localPointToWorld(read,
+            rock::transform_math::worldPointToLocal(store, gripPoint));
+    };
+    ok &= expectVectorNear("stored point turns with the body", carried(bodyFrame(atRest), bodyFrame(turnedBody)),
+        gripAfterTurn);
+    if ((carried(atRest.massFrame, turnedBody.massFrame) - gripAfterTurn).Length() < 1.0f) {
+        std::puts("a mass-frame readback unexpectedly carried the stored point");
+        ok = false;
+    }
+
+    namespace hinge_math = rock::touch_grab_math;
+    const hinge_math::Vector3 hingeAxis{ 0.0f, 0.0f, 1.0f };
+    hinge_math::Vector3 witness{};
+    ok &= hinge_math::makePerpendicularWitness(hingeAxis, witness);
+    const auto witnessLocal = rock::transform_math::worldVectorToLocal(bodyFrame(atRest),
+        RE::NiPoint3{ witness.x, witness.y, witness.z });
+    const auto witnessNow = rock::transform_math::localVectorToWorld(bodyFrame(turnedBody), witnessLocal);
+    ok &= expectNear("hinge angle of the turned body",
+        hinge_math::hingeCoordinate(0.0f, witness, { witnessNow.x, witnessNow.y, witnessNow.z }, hingeAxis), turn);
+
+    // The transform a hinge or slider constraint receives for the body is the body's own blocks.
+    const auto native = rock::HavokTransform::fromRowAxes(bodyFrame(turnedBody)).native();
+    for (int axis = 0; axis < 3; ++axis) {
+        for (int component = 0; component < 3; ++component) {
+            ok &= expectMatrixEntryNear("constraint body transform", native.rotation, axis, component,
+                turnedBody.blocks[axis * 4 + component]);
+        }
     }
     return ok ? 0 : 1;
 }

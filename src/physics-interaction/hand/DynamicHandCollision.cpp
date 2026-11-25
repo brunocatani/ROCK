@@ -552,7 +552,7 @@ namespace rock
         const auto targetSnapshot = havok_runtime::snapshotBody(world, RE::hknpBodyId{ targetBodyId });
         RE::NiTransform targetWorld{};
         if (!targetSnapshot.valid || !targetSnapshot.body ||
-            !havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ targetBodyId }, targetWorld) ||
+            !havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ targetBodyId }, targetWorld) ||
             !isFiniteTransform(targetWorld)) {
             return reject(SurfaceLatchFailure::TargetTransformUnavailable);
         }
@@ -596,8 +596,7 @@ namespace rock
         RE::NiTransform liveCompoundWorld{};
         if (!compoundOwner.created || compoundOwner.createdWorld != world ||
             compoundOwner.body.getBodyId().value != sourceBodyId ||
-            !havok_runtime::tryResolveLiveBodyWorldTransform(world, compoundOwner.body.getBodyId(),
-                liveCompoundWorld) ||
+            !havok_runtime::tryGetGeneratedBodyFrame(world, compoundOwner.body.getBodyId(), liveCompoundWorld) ||
             !isFiniteTransform(liveCompoundWorld)) {
             return reject(SurfaceLatchFailure::SourceProxyUnavailable);
         }
@@ -1518,11 +1517,10 @@ namespace rock
                     : havok_runtime::BodyIdentitySnapshot{};
                 const bool targetMatches = targetSnapshot.valid && targetSnapshot.body == latch.targetBodyIdentity &&
                     targetSnapshot.collisionObject == latch.targetCollisionIdentity;
-                const auto liveTarget = targetMatches
-                    ? havok_runtime::resolveLiveBodyWorldTransform(frame.hknpWorld, *targetSnapshot.body)
-                    : havok_runtime::ResolvedBodyWorldTransform{};
-                RE::NiTransform targetWorld = liveTarget.transform;
-                if (targetMatches && liveTarget.valid && isFiniteTransform(targetWorld)) {
+                RE::NiTransform targetWorld = targetMatches
+                    ? havok_runtime::bodyArrayWorldTransform(*targetSnapshot.body)
+                    : transform_math::makeIdentityTransform<RE::NiTransform>();
+                if (targetMatches && isFiniteTransform(targetWorld)) {
                     if (latch.animatedReferenceFormId != 0)
                         targetWorld = animatedWorld;
                     latch.lastHandWorld = transform_math::composeTransforms(targetWorld, latch.handInTargetBody);
@@ -1989,7 +1987,7 @@ namespace rock
             owner.droveThisSubstep = false;
 
             RE::NiTransform liveCompoundWorld{};
-            if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, owner.body.getBodyId(), liveCompoundWorld) ||
+            if (!havok_runtime::tryGetGeneratedBodyFrame(world, owner.body.getBodyId(), liveCompoundWorld) ||
                 !isFiniteTransform(liveCompoundWorld)) {
                 for (auto& semanticSlot : handSlots.bodies) {
                     clearPhysicsContactState(semanticSlot);

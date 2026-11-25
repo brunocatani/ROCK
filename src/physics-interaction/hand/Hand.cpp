@@ -46,13 +46,6 @@ namespace rock
             (void)frik_visual_authority::clearHandWorld(GRAB_EXTERNAL_HAND_TAG, handFromBool(isLeft));
         }
 
-        RE::NiTransform getLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
-        {
-            RE::NiTransform result = transform_math::makeIdentityTransform<RE::NiTransform>();
-            tryResolveLiveBodyWorldTransform(world, bodyId, result);
-            return result;
-        }
-
         float pointDistanceGameUnits(const RE::NiPoint3& lhs, const RE::NiPoint3& rhs)
         {
             const RE::NiPoint3 delta = lhs - rhs;
@@ -1192,16 +1185,14 @@ namespace rock
             return false;
         }
 
-        body_frame::BodyFrameSource source = body_frame::BodyFrameSource::None;
         std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
         RE::NiTransform livePalmWorld{};
-        if (!tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), livePalmWorld, &source, &motionIndex)) {
+        if (!havok_runtime::tryGetGeneratedBodyFrame(world, _handBody.getBodyId(), livePalmWorld, &motionIndex)) {
             return false;
         }
 
         outReference.valid = true;
         outReference.world = livePalmWorld;
-        outReference.source = source;
         outReference.motionIndex = motionIndex;
 
         const auto snapshot = havok_runtime::snapshotBody(world, _handBody.getBodyId());
@@ -1694,7 +1685,6 @@ namespace rock
         out.palmAuthorityBaseWorld = palmAuthorityBaseWorld;
         out.proxyTargetWorld = applyGrabAuthorityProxyLocalOffsetToFrame(palmAuthorityBaseWorld, _isLeft);
         out.localOffsetGameUnits = computeGrabAuthorityProxyOffsetLocalGame(_isLeft);
-        out.palmSource = palmReference.source;
         out.palmMotionIndex = palmReference.motionIndex;
         return true;
     }
@@ -2023,7 +2013,10 @@ namespace rock
         auto* root = _currentSelection.refr->Get3D();
         auto* owner = havok_runtime::getCollisionObjectFromBody(world, _currentSelection.bodyId);
         RE::NiTransform bodyWorld{};
-        if (!root || !owner || !tryResolveLiveBodyWorldTransform(world, _currentSelection.bodyId, bodyWorld))
+        RE::NiPoint3 bodyCenter{};
+        if (!root || !owner ||
+            !havok_runtime::tryGetBodyArrayWorldTransform(world, _currentSelection.bodyId, bodyWorld) ||
+            !havok_runtime::tryGetBodyCenterWorld(world, _currentSelection.bodyId, bodyCenter))
             return false;
         selection_query_policy::BodyLocalSelectionAnchor anchor{};
         if (_currentSelection.targetKind == grab_target::Kind::ExtractableItem) {
@@ -2031,7 +2024,7 @@ namespace rock
                 return false;
             anchor = _currentSelection.equipmentAnchor;
         } else if (!anchor.capture(bodyWorld,
-                       _currentSelection.hasHitPoint ? _currentSelection.hitPointWorld : bodyWorld.translate)) {
+                       _currentSelection.hasHitPoint ? _currentSelection.hitPointWorld : bodyCenter)) {
             return false;
         }
         if (!lockFarSelection())
@@ -2071,7 +2064,7 @@ namespace rock
                 return false;
         }
         RE::NiTransform bodyWorld{};
-        if (!tryResolveLiveBodyWorldTransform(world, _currentSelection.bodyId, bodyWorld) ||
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, _currentSelection.bodyId, bodyWorld) ||
             !_gestureSelection.anchor.resolve(bodyWorld, targetWorld))
             return false;
         const float distance = pointDistanceGameUnits(handOrigin, targetWorld);
@@ -2561,8 +2554,7 @@ namespace rock
                         peerHeldBodyIds.begin() + candidateIndex - 1))
                 continue;
             RE::NiTransform bodyWorld{};
-            if (!havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld) &&
-                !tryResolveLiveBodyWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld)) {
+            if (!havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, RE::hknpBodyId{ bodyId }, bodyWorld)) {
                 lastMissReason = "no-body-transform";
                 continue;
             }
@@ -2601,11 +2593,11 @@ namespace rock
                     continue;
                 }
 
-                RE::NiTransform handContactWorld{};
-                if (tryResolveLiveBodyWorldTransform(hknpWorld, RE::hknpBodyId{ contact.handBodyId },
-                        handContactWorld)) {
-                    considerHitPoint(bodyId, hitNode, handContactWorld.translate,
-                        normalizeOrFallback(selectionOrigin - handContactWorld.translate, palmNormal),
+                RE::NiPoint3 handContactCenter{};
+                if (havok_runtime::tryGetBodyCenterWorld(hknpWorld, RE::hknpBodyId{ contact.handBodyId },
+                        handContactCenter)) {
+                    considerHitPoint(bodyId, hitNode, handContactCenter,
+                        normalizeOrFallback(selectionOrigin - handContactCenter, palmNormal),
                         "semanticHandBodyOriginFallback");
                 } else {
                     lastMissReason = "semantic-hand-body-missing";

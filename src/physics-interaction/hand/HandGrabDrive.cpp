@@ -523,17 +523,7 @@ namespace rock
             const RE::NiTransform proxyBaseWorld =
                 hand_bone_collider_geometry_math::generatedColliderFrameToGrabAuthorityFrame(palmReference.world);
             outProxyWorld = applyGrabAuthorityProxyLocalOffsetToFrame(proxyBaseWorld, _isLeft);
-            switch (palmReference.source) {
-            case body_frame::BodyFrameSource::MotionCenterOfMass:
-                outSource = "livePalmAnchorMotionGrabFrame";
-                break;
-            case body_frame::BodyFrameSource::BodyTransform:
-                outSource = "livePalmAnchorBodyGrabFrame";
-                break;
-            default:
-                outSource = "livePalmAnchorResolvedGrabFrame";
-                break;
-            }
+            outSource = "livePalmAnchorGrabFrame";
             return true;
         }
 
@@ -746,8 +736,6 @@ namespace rock
         float proxyAngularVelocityRadiansPerSecond = 0.0f;
         bool proxyVelocityTelemetryOk = false;
         RE::NiTransform proxyReadbackBetween{};
-        body_frame::BodyFrameSource proxyReadbackSourceBetween = body_frame::BodyFrameSource::None;
-        std::uint32_t proxyReadbackMotionIndexBetween = body_frame::kFreeMotionIndex;
         bool proxyReadbackBetweenOk = false;
         float proxyReadbackBetweenPositionErrorGameUnits = -1.0f;
         float proxyReadbackBetweenRotationErrorDegrees = -1.0f;
@@ -843,8 +831,8 @@ namespace rock
                 g_rockConfig.rockHandBoneColliderMaxAngularVelocity);
             proxyDriveOk = proxyDriveResult.driven;
             if (proxyDriveOk) {
-                proxyReadbackBetweenOk = tryResolveLiveBodyWorldTransform(world, proxyBodyId, proxyReadbackBetween,
-                    &proxyReadbackSourceBetween, &proxyReadbackMotionIndexBetween);
+                proxyReadbackBetweenOk =
+                    havok_runtime::tryGetGeneratedBodyFrame(world, proxyBodyId, proxyReadbackBetween);
                 if (proxyReadbackBetweenOk) {
                     proxyReadbackBetweenPositionErrorGameUnits =
                         pointDistanceGameUnits(proxyReadbackBetween.translate, pending.proxyWorld.translate);

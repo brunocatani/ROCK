@@ -351,12 +351,7 @@ namespace rock
             if (!hknp || bodyId == INVALID_CONTACT_BODY_ID || bodyId == INVALID_BODY_ID) {
                 return false;
             }
-            RE::NiTransform bodyWorld{};
-            if (!tryResolveLiveBodyWorldTransform(hknp, RE::hknpBodyId{ bodyId }, bodyWorld)) {
-                return false;
-            }
-            outPosition = bodyWorld.translate;
-            return true;
+            return havok_runtime::tryGetBodyCenterWorld(hknp, RE::hknpBodyId{ bodyId }, outPosition);
         };
 
         auto addSkeletonBone = [&](const DirectSkeletonBoneSnapshot& snapshot, std::size_t boneIndex, bool drawAxis) {
@@ -1474,17 +1469,17 @@ namespace rock
                                                 : debug::MarkerOverlayRole::RightHandBoneContact;
                 for (std::size_t i = 0; i < contacts.count; ++i) {
                     const auto& contact = contacts.records[i];
-                    RE::NiTransform sourceWorld{};
-                    if (!tryResolveLiveBodyWorldTransform(hknp, RE::hknpBodyId{ contact.handBodyId }, sourceWorld)) {
+                    RE::NiPoint3 sourceCenter{};
+                    if (!havok_runtime::tryGetBodyCenterWorld(hknp, RE::hknpBodyId{ contact.handBodyId }, sourceCenter)) {
                         continue;
                     }
 
-                    RE::NiTransform targetWorld{};
+                    RE::NiPoint3 targetCenter{};
                     const bool hasTarget =
-                        tryResolveLiveBodyWorldTransform(hknp, RE::hknpBodyId{ contact.otherBodyId }, targetWorld);
-                    addMarkerPoint(role, sourceWorld.translate, 2.8f);
+                        havok_runtime::tryGetBodyCenterWorld(hknp, RE::hknpBodyId{ contact.otherBodyId }, targetCenter);
+                    addMarkerPoint(role, sourceCenter, 2.8f);
                     if (hasTarget) {
-                        addMarkerLine(role, sourceWorld.translate, targetWorld.translate);
+                        addMarkerLine(role, sourceCenter, targetCenter);
                     }
                 }
             };
@@ -2231,7 +2226,7 @@ namespace rock
                 }
 
                 RE::NiTransform liveProxyWorld{};
-                const bool liveProxyOk = tryResolveLiveBodyWorldTransform(hknp, snapshot.proxyBodyId, liveProxyWorld);
+                const bool liveProxyOk = havok_runtime::tryGetGeneratedBodyFrame(hknp, snapshot.proxyBodyId, liveProxyWorld);
                 const float queuedToApplied = snapshot.hasQueuedTarget && snapshot.hasAppliedTarget
                     ? (snapshot.queuedProxyTargetWorld.translate - snapshot.appliedProxyTargetWorld.translate).Length()
                     : -1.0f;

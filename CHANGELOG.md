@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Hinges and sliders from other mods turn the right way.** A door, lid or lever a
+  mod makes grabbable was tied to the hand, and its angle reported, through the
+  wrong axes of the object. A held surface that turns keeps the hand on the same
+  spot.
+- **A pulled object comes to the hand by the point ROCK chose.** That point drifted
+  as the object turned in flight, more the longer the object.
+- **For mod authors: Touch 2.0 reports the real coordinate, contact point and
+  contact normal** of a body that has turned or is off its centre of mass. No
+  record or table change.
+
 ## v1.0.4
 
 ### Added

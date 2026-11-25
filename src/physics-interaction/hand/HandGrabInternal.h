@@ -695,10 +695,6 @@ namespace rock
     {
         RE::NiPoint3 palmPosition{};
         RE::NiTransform grabBodyWorld{};
-        RE::NiTransform motionBodyWorld{};
-        body_frame::BodyFrameSource motionBodySource = body_frame::BodyFrameSource::None;
-        bool hasMotionBodyWorld = false;
-        bool constraintUsesMotionBody = false;
         RE::NiTransform constraintBodyWorld{};
         RE::NiPoint3 grabPivotAWorld{};
         RE::bhkNPCollisionObject* bodyCollisionObject = nullptr;

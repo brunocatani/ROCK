@@ -141,14 +141,12 @@ namespace rock
             return owner && reinterpret_cast<std::uintptr_t>(owner) == selection.equipmentAnchorOwner &&
                 havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerBody) && ownerWorld == hknpWorld &&
                 ownerBody.value == selection.bodyId.value &&
-                tryResolveLiveBodyWorldTransform(hknpWorld, selection.bodyId, bodyWorld) &&
+                havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, selection.bodyId, bodyWorld) &&
                 selection.equipmentAnchor.resolve(bodyWorld, outAnchor);
         }
 
         if (hknpWorld && selection.bodyId.value != 0x7FFF'FFFF) {
-            RE::NiTransform bodyWorld{};
-            if (tryResolveLiveBodyWorldTransform(hknpWorld, selection.bodyId, bodyWorld)) {
-                outAnchor = bodyWorld.translate;
+            if (havok_runtime::tryGetBodyCenterWorld(hknpWorld, selection.bodyId, outAnchor)) {
                 return true;
             }
             if (auto* ownerNode = getOwnerNodeFromBody(hknpWorld, selection.bodyId)) {

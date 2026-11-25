@@ -486,7 +486,6 @@ namespace rock
         float targetToBodyAxisYDegrees = 0.0f;
         float targetToBodyAxisZDegrees = 0.0f;
         std::uint32_t motionIndex = body_frame::kFreeMotionIndex;
-        body_frame::BodyFrameSource liveBodyFrameSource = body_frame::BodyFrameSource::None;
         float driveDeltaSeconds = 0.0f;
         float sourceDeltaSeconds = 0.0f;
         float sourceAgeSeconds = 0.0f;

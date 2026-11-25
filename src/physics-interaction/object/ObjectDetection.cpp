@@ -711,7 +711,7 @@ namespace rock
                     RE::NiTransform bodyWorld{};
                     if (!owner || !havok_runtime::tryResolveCollisionObjectBody(owner, ownerWorld, ownerBody) ||
                         ownerWorld != hknpWorld || ownerBody.value != hitBodyId.value ||
-                        !tryResolveLiveBodyWorldTransform(hknpWorld, hitBodyId, bodyWorld) ||
+                        !havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, hitBodyId, bodyWorld) ||
                         !candidate.equipmentAnchor.capture(bodyWorld, hitPoint)) {
                         ++outRejectedNotGrabbable;
                         ROCK_LOG_SAMPLE_WARN(Hand, 2000,

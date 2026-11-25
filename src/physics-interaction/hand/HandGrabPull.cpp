@@ -46,17 +46,15 @@ namespace rock
             });
         }
 
-        // The pulled mesh point in Havok units, carried by the primary body's live motion.
+        // The pulled mesh point in Havok units, carried by the primary body.
         bool resolvePulledMeshPointHavok(RE::hknpWorld* world, std::uint32_t primaryBodyId,
             const RE::NiPoint3& meshPointBodyLocal, RE::NiPoint3& outHavok)
         {
-            auto* body = havok_runtime::getBody(world, RE::hknpBodyId{ primaryBodyId });
-            RE::NiTransform motionWorld{};
-            if (!body || !havok_runtime::tryGetMotionWorldTransform(world, *body, motionWorld)) {
+            RE::NiTransform bodyWorld{};
+            if (!tryGetBodyWorldTransform(world, RE::hknpBodyId{ primaryBodyId }, bodyWorld)) {
                 return false;
             }
-            const auto pointHavok =
-                niPointToHkVector(transform_math::localPointToWorld(motionWorld, meshPointBodyLocal));
+            const auto pointHavok = niPointToHkVector(transform_math::localPointToWorld(bodyWorld, meshPointBodyLocal));
             outHavok = RE::NiPoint3{ pointHavok.x, pointHavok.y, pointHavok.z };
             return std::isfinite(outHavok.x) && std::isfinite(outHavok.y) && std::isfinite(outHavok.z);
         }
@@ -528,7 +526,7 @@ namespace rock
          * its centre of mass to the hand left the mesh short of the fingers.
          * The pulled point is the mesh surface point nearest the mesh's bounds
          * centre (PullToObjectCenterEnabled; a ray hit at selection range is aim
-         * noise) or nearest the aimed hit, stored in the primary body's motion
+         * noise) or nearest the aimed hit, stored in the primary body's BODY
          * frame so it turns with the object. Arrival hands that point to the
          * catch as its selection hit, and the catch seats a mesh point on the
          * palm. An object without a visual mesh is not pulled.
@@ -549,13 +547,10 @@ namespace rock
                 selectedIsWeapon ? &weapon_effect_geometry::isEffectShape : nullptr);
         }
         RE::NiPoint3 pulledMeshPointWorld{};
-        RE::NiTransform pulledMotionWorld{};
-        auto* pulledPrimaryBody = havok_runtime::getBody(world, RE::hknpBodyId{ _pulledPrimaryBodyId });
         if (!choosePulledMeshPoint(pulledMeshTriangles,
                 !g_rockConfig.rockPullToObjectCenterEnabled && _currentSelection.hasHitPoint,
                 _currentSelection.hitPointWorld, pulledMeshPointWorld) ||
-            !pulledPrimaryBody ||
-            !havok_runtime::tryGetMotionWorldTransform(world, *pulledPrimaryBody, pulledMotionWorld)) {
+            !hasPrimaryBodyWorld) {
             ROCK_LOG_WARN(Hand, "{} hand PULL refused: no visual mesh to pull formID={:08X} meshNode='{}' triangles={}",
                 handName(), selectedRef->GetFormID(), nodeDebugName(pulledMeshNode), pulledMeshTriangles.size());
             restoreFailedPullPrep();
@@ -563,7 +558,7 @@ namespace rock
             clearSelectionState(true);
             return false;
         }
-        _pullFlight.meshPointBodyLocal = transform_math::worldPointToLocal(pulledMotionWorld, pulledMeshPointWorld);
+        _pullFlight.meshPointBodyLocal = transform_math::worldPointToLocal(primaryBodyWorld, pulledMeshPointWorld);
 
         /*
          * Long-object presentation capture: PCA of the same mesh at pull

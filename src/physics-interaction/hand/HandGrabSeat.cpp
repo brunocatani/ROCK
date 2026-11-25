@@ -500,10 +500,6 @@ namespace rock
         const char* grabPointMode = surface.pointMode;
         auto& palmPos = outCapture.palmPosition;
         auto& grabBodyWorldAtGrab = outCapture.grabBodyWorld;
-        auto& motionBodyWorldAtGrab = outCapture.motionBodyWorld;
-        auto& motionBodySourceAtGrab = outCapture.motionBodySource;
-        auto& hasMotionBodyWorldAtGrab = outCapture.hasMotionBodyWorld;
-        auto& constraintUsesMotionBodyAtGrab = outCapture.constraintUsesMotionBody;
         auto& constraintBodyWorldAtGrab = outCapture.constraintBodyWorld;
         auto& grabPivotAWorld = outCapture.grabPivotAWorld;
         RE::TESObjectCELL* ownerCellAtGrab = nullptr;
@@ -527,18 +523,14 @@ namespace rock
             _heldBodyIdsCount.store(0, std::memory_order_release);
             return false;
         }
-        hasMotionBodyWorldAtGrab =
-            tryResolveLiveBodyWorldTransform(world, objectBodyId, motionBodyWorldAtGrab, &motionBodySourceAtGrab);
         /*
                  * Custom constraint body-B data is authored in the hknp BODY frame.
                  * HIGGS does the same kind of thing on Skyrim's hkp side: it freezes
                  * pivot B from the rigid body transform and treats COM/motion as mass
                  * data, not as a local-frame owner. A runtime MOTION-frame experiment
                  * made the object settle at the wrong rotation even when the proxy
-                 * target was stable, so the live motion transform remains diagnostic
-                 * evidence only.
+                 * target was stable.
                  */
-        constraintUsesMotionBodyAtGrab = false;
         constraintBodyWorldAtGrab = grabBodyWorldAtGrab;
         /*
                  * The hidden proxy is body A for dynamic grab. The close-grab

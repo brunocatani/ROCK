@@ -710,7 +710,7 @@ namespace rock::havok_runtime
         return tryGetBodyArrayWorldTransform(world, bodyId, outTransform);
     }
 
-    bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform)
+    bool tryGetGeneratedBodyFrame(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform)
     {
         outTransform = transform_math::makeIdentityTransform<RE::NiTransform>();
 
@@ -727,41 +727,32 @@ namespace rock::havok_runtime
         return true;
     }
 
-    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body)
+    bool tryGetGeneratedBodyFrame(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform,
+        std::uint32_t* outMotionIndex)
     {
-        ResolvedBodyWorldTransform result{};
-        result.motionIndex = body.motionIndex;
-        RE::NiTransform motionTransform{};
-        const bool hasMotionTransform = tryGetMotionWorldTransform(world, body, motionTransform);
-        result.source = body_frame::chooseLiveBodyFrameSource(true, hasMotionTransform);
-        result.transform = result.source == body_frame::BodyFrameSource::MotionCenterOfMass
-            ? motionTransform
-            : bodyArrayWorldTransform(body);
-        result.valid = result.source != body_frame::BodyFrameSource::None;
-        return result;
-    }
-
-    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
-    {
-        if (const auto* body = getBody(world, bodyId))
-            return resolveLiveBodyWorldTransform(world, *body);
-        ResolvedBodyWorldTransform result{};
-        result.transform = transform_math::makeIdentityTransform<RE::NiTransform>();
-        return result;
-    }
-
-    bool tryResolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform,
-        body_frame::BodyFrameSource* outSource, std::uint32_t* outMotionIndex)
-    {
-        const auto resolved = resolveLiveBodyWorldTransform(world, bodyId);
-        outTransform = resolved.transform;
-        if (outSource) {
-            *outSource = resolved.source;
+        outTransform = transform_math::makeIdentityTransform<RE::NiTransform>();
+        const auto* body = getBody(world, bodyId);
+        if (!body) {
+            return false;
         }
         if (outMotionIndex) {
-            *outMotionIndex = resolved.motionIndex;
+            *outMotionIndex = body->motionIndex;
         }
-        return resolved.valid;
+        return tryGetGeneratedBodyFrame(world, *body, outTransform);
+    }
+
+    bool tryGetBodyCenterWorld(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiPoint3& outCenterGame)
+    {
+        const auto* body = getBody(world, bodyId);
+        if (!body) {
+            return false;
+        }
+        if (const auto* motion = getMotion(world, body->motionIndex)) {
+            outCenterGame = hkVectorToNiPoint(motion->position);
+        } else {
+            outCenterGame = bodyArrayWorldTransform(*body).translate;
+        }
+        return true;
     }
 
     bool getBodyCOMWorld(RE::hknpWorld* world, RE::hknpBodyId bodyId, float& outX, float& outY, float& outZ)

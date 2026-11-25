@@ -122,7 +122,7 @@ namespace rock
                 return false;
             }
             RE::NiTransform targetWorld{};
-            if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ targetBodyId }, targetWorld)) {
+            if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ targetBodyId }, targetWorld)) {
                 outAcquisition.failure = surface_mesh_grab_policy::Failure::TargetTransformUnavailable;
                 return false;
             }
@@ -336,8 +336,8 @@ namespace rock
                 offsets::kFunc_LimitedHingeConstraintData_SetInWorldSpace) };
             constructor(data);
 
-            const auto transformA = HavokTransform::fromColumnAxes(bodyAWorld);
-            const auto transformB = HavokTransform::fromColumnAxes(bodyBWorld);
+            const auto transformA = HavokTransform::fromRowAxes(bodyAWorld);
+            const auto transformB = HavokTransform::fromRowAxes(bodyBWorld);
             const auto pivot = makeHavokPoint(pivotWorld);
             const auto axis = makeHavokDirection(axisWorld);
             setInWorldSpace(data, transformA.native(), transformB.native(), pivot, axis);
@@ -364,8 +364,8 @@ namespace rock
                 offsets::kFunc_PrismaticConstraintData_SetInWorldSpace) };
             constructor(data);
 
-            const auto transformA = HavokTransform::fromColumnAxes(bodyAWorld);
-            const auto transformB = HavokTransform::fromColumnAxes(bodyBWorld);
+            const auto transformA = HavokTransform::fromRowAxes(bodyAWorld);
+            const auto transformB = HavokTransform::fromRowAxes(bodyBWorld);
             const auto pivot = makeHavokPoint(pivotWorld);
             const auto axis = makeHavokDirection(axisWorld);
             setInWorldSpace(data, transformA.native(), transformB.native(), pivot, axis);
@@ -843,7 +843,7 @@ namespace rock
             active.originalMotionClass == provider::TouchGrabMotionClass::Static || active.bodyId == kInvalidId) {
             return false;
         }
-        if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ active.bodyId },
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ active.bodyId },
                 active.initialBodyWorld)) {
             return false;
         }
@@ -873,7 +873,7 @@ namespace rock
 
         RE::NiTransform anchorWorld = transform_math::makeIdentityTransform<RE::NiTransform>();
         anchorWorld.translate = toNiPoint(active.target.pivotWorldGame);
-        if (!active.anchor.setTransform(HavokTransform::fromColumnAxes(anchorWorld))) {
+        if (!active.anchor.setTransform(HavokTransform::fromRowAxes(anchorWorld))) {
             return false;
         }
 
@@ -887,7 +887,7 @@ namespace rock
         }
 
         RE::NiTransform liveBodyWorld{};
-        if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ active.bodyId }, liveBodyWorld)) {
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ active.bodyId }, liveBodyWorld)) {
             return false;
         }
 
@@ -1016,9 +1016,9 @@ namespace rock
         } else {
             RE::NiTransform handBodyWorld{};
             RE::NiTransform targetBodyWorld{};
-            if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ contact.handBodyId },
+            if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ contact.handBodyId },
                     handBodyWorld) ||
-                !havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ active.bodyId },
+                !havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ active.bodyId },
                     targetBodyWorld)) {
                 return false;
             }
@@ -1053,7 +1053,7 @@ namespace rock
         }
         RE::NiTransform targetWorld{};
         if ((hasContactPoint || hasContactNormal) &&
-            havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ active.bodyId }, targetWorld)) {
+            havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ active.bodyId }, targetWorld)) {
             attachment->contactRelativeToTarget = true;
             if (hasContactPoint) {
                 attachment->contactPointInTargetBody = transform_math::worldPointToLocal(targetWorld, contactPoint);
@@ -1194,7 +1194,7 @@ namespace rock
             }
 
             RE::NiTransform liveTargetWorld{};
-            if (havok_runtime::tryResolveLiveBodyWorldTransform(hknpWorld, RE::hknpBodyId{ active.bodyId },
+            if (havok_runtime::tryGetBodyArrayWorldTransform(hknpWorld, RE::hknpBodyId{ active.bodyId },
                     liveTargetWorld)) {
                 for (auto& hand : active.hands) {
                     if (!hand.active || !hand.contactRelativeToTarget) {
@@ -1260,7 +1260,7 @@ namespace rock
             return 0.0f;
         }
         RE::NiTransform currentBodyWorld{};
-        if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ active.bodyId },
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ active.bodyId },
                 currentBodyWorld)) {
             return active.lastCoordinate;
         }

@@ -12,12 +12,9 @@
 namespace rock::body_frame
 {
     /*
-     * ROCK keeps the hknp body/shape frame separate from the motion center-of-mass
-     * frame because FO4VR exposes both and they are not interchangeable. Generic
-     * live-body diagnostics prefer the motion-backed center-of-mass frame when it
-     * is readable. ROCK dynamic grab is the exception: the production
-     * proxy-constraint path freezes the grip pivot and visual relation in the
-     * body-array BODY frame, while MOTION stays COM/weight diagnostics only.
+     * ROCK keeps the hknp body/shape frame separate from the motion frame
+     * because FO4VR exposes both and they are not interchangeable: the motion's
+     * origin is the center of mass and its axes are the principal inertia axes.
      */
     inline constexpr std::uint32_t kFreeMotionIndex = 0x7FFF'FFFF;
     inline constexpr std::uint32_t kInvalidBodyId = 0x7FFF'FFFF;
@@ -65,23 +62,6 @@ namespace rock::body_frame
             bodyId <= highWaterMark;
     }
 
-    inline BodyFrameSource chooseLiveBodyFrameSource(bool hasBodyTransform, bool hasMotionTransform)
-    {
-        /*
-         * General live-body diagnostics share the motion-backed frame when it is
-         * readable. Production dynamic grab does not call this chooser for grip
-         * authority; it uses a dedicated BODY helper so COM/MOTION cannot become
-         * pivot or orientation authority.
-         */
-        if (hasMotionTransform) {
-            return BodyFrameSource::MotionCenterOfMass;
-        }
-        if (hasBodyTransform) {
-            return BodyFrameSource::BodyTransform;
-        }
-        return BodyFrameSource::None;
-    }
-
     inline BodyFrameAnchor chooseSelectionDistanceAnchor(bool hasContactPoint, const RE::NiPoint3& contactPoint,
         bool hasBodyTransform, const RE::NiPoint3& bodyTransform, bool hasOwnerNode, const RE::NiPoint3& ownerNode,
         bool hasMotionCenterOfMass, const RE::NiPoint3& motionCenterOfMass)
@@ -102,38 +82,4 @@ namespace rock::body_frame
     }
 
     using vector_math::distance;
-
-    inline const char* bodyFrameSourceName(BodyFrameSource source)
-    {
-        switch (source) {
-        case BodyFrameSource::BodyTransform:
-            return "bodyTransform";
-        case BodyFrameSource::MotionCenterOfMass:
-            return "motionCenterOfMass";
-        case BodyFrameSource::OwnerNode:
-            return "ownerNode";
-        case BodyFrameSource::ContactPoint:
-            return "contactPoint";
-        case BodyFrameSource::None:
-        default:
-            return "none";
-        }
-    }
-
-    inline const char* bodyFrameSourceCode(BodyFrameSource source)
-    {
-        switch (source) {
-        case BodyFrameSource::BodyTransform:
-            return "BODY";
-        case BodyFrameSource::MotionCenterOfMass:
-            return "MOTION";
-        case BodyFrameSource::OwnerNode:
-            return "OWNER";
-        case BodyFrameSource::ContactPoint:
-            return "CONTACT";
-        case BodyFrameSource::None:
-        default:
-            return "NONE";
-        }
-    }
 }

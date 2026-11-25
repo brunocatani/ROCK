@@ -21,8 +21,8 @@ namespace rock
             return HavokTransform(transform_math::niStoredAxesToHknpBodyColumns(source.rotate), source.translate);
         }
 
-        // Local axes are the matrix columns: generated collider frames, drive targets
-        // and motion (MOTION) readback.
+        // Local axes are the matrix columns: generated collider frames, their drive targets
+        // and their readback.
         [[nodiscard]] static HavokTransform fromColumnAxes(const RE::NiTransform& source)
         {
             return HavokTransform(transform_math::niRowsToHavokColumns(source.rotate), source.translate);

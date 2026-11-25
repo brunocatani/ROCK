@@ -117,8 +117,8 @@ namespace rock
                 other.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK))
             return;
         RE::NiTransform surfaceWorld{}, proxyWorld{};
-        if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, other.bodyId, surfaceWorld) ||
-            !havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), proxyWorld) ||
+        if (!havok_runtime::tryGetBodyArrayWorldTransform(world, other.bodyId, surfaceWorld) ||
+            !havok_runtime::tryGetGeneratedBodyFrame(world, _body.getBodyId(), proxyWorld) ||
             !transform_math::isInvertibleTransform(surfaceWorld) || !transform_math::isInvertibleTransform(proxyWorld))
             return;
 
@@ -152,7 +152,7 @@ namespace rock
             reinterpret_cast<std::uintptr_t>(other.collisionObject) == contact.collisionObject &&
             collision_layer_policy::isWorldSurfaceLayer(
                 other.collisionFilterInfo & collision_layer_policy::FO4_LAYER_FILTER_MASK) &&
-            havok_runtime::tryResolveLiveBodyWorldTransform(_frameWorld, other.bodyId, surfaceWorld) &&
+            havok_runtime::tryGetBodyArrayWorldTransform(_frameWorld, other.bodyId, surfaceWorld) &&
             transform_math::isInvertibleTransform(surfaceWorld);
     }
 
@@ -190,7 +190,7 @@ namespace rock
                 _body.getBodyId().value, surfaceContactTimeMilliseconds());
         const bool surfaceValid = fresh && resolveSurfaceSupportBody(contact, surfaceWorld);
         const bool currentContact = surfaceValid &&
-            havok_runtime::tryResolveLiveBodyWorldTransform(frame.hknpWorld, _body.getBodyId(), liveProxyWorld);
+            havok_runtime::tryGetGeneratedBodyFrame(frame.hknpWorld, _body.getBodyId(), liveProxyWorld);
         if (currentContact) {
             contact.weaponWorld = reconstructWeaponRoot(liveProxyWorld, _createdCenterWeaponLocal, _createdWeaponScale);
             contact.surfaceWorld = surfaceWorld;

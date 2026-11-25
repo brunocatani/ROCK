@@ -60,14 +60,6 @@ namespace rock::havok_runtime
         RE::NiAVObject* ownerNode = nullptr;
     };
 
-    struct ResolvedBodyWorldTransform
-    {
-        bool valid = false;
-        RE::NiTransform transform{};
-        body_frame::BodyFrameSource source{ body_frame::BodyFrameSource::None };
-        std::uint32_t motionIndex{ body_frame::kFreeMotionIndex };
-    };
-
     struct ContactSignalPointResult
     {
         bool valid = false;
@@ -164,17 +156,20 @@ namespace rock::havok_runtime
     RE::NiAVObject* getOwnerNodeFromBody(const RE::hknpBody* body);
     RE::NiAVObject* getOwnerNodeFromBody(RE::hknpWorld* world, RE::hknpBodyId bodyId);
 
+    // BODY: the hknpBody's own transform, the frame of its shape and of constraint pivots, with
+    // its axes in the matrix rows. The frame to read for any engine-owned body.
     RE::NiTransform bodyArrayWorldTransform(const RE::hknpBody& body);
     bool tryGetBodyArrayWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform);
     bool tryGetBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform);
-    bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform);
-    // MOTION readback (a moving body) has its axes in the matrix columns, BODY readback (tryGetBody*,
-    // a body without a motion) in the rows; BodyFrameSource says which one a live read returned.
-    // The borrowed body must remain valid for this operation; never retain it across native mutation.
-    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body);
-    ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId);
-    bool tryResolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform,
-        body_frame::BodyFrameSource* outSource = nullptr, std::uint32_t* outMotionIndex = nullptr);
+    // MOTION: the body's mass frame, with its origin at the centre of mass, its axes along the
+    // principal inertia axes and those axes in the matrix columns. It matches a generated collider
+    // frame only because ROCK's own bodies keep their mass frame on the body frame; an
+    // engine-owned body's does not. Fails for a body without a readable motion.
+    bool tryGetGeneratedBodyFrame(RE::hknpWorld* world, const RE::hknpBody& body, RE::NiTransform& outTransform);
+    bool tryGetGeneratedBodyFrame(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform,
+        std::uint32_t* outMotionIndex = nullptr);
+    // The centre of mass of a body with a motion, the body's origin otherwise.
+    bool tryGetBodyCenterWorld(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiPoint3& outCenterGame);
 
     bool getBodyCOMWorld(RE::hknpWorld* world, RE::hknpBodyId bodyId, float& outX, float& outY, float& outZ);
     bool tryReadMotionPropertiesId(const RE::hknpMotion* motion, std::uint16_t& outMotionPropertiesId);

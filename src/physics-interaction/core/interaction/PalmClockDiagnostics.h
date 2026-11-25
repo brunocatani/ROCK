@@ -101,7 +101,6 @@ namespace rock
                 const char* rawState = rawOk ? "ok" : "none";
                 const char* targetState = targetOk ? "ok" : "none";
                 const char* liveState = liveOk ? "ok" : "none";
-                const char* palmSource = liveOk ? body_frame::bodyFrameSourceCode(livePalm.source) : "none";
                 const std::uint32_t palmMotion = liveOk ? livePalm.motionIndex : body_frame::kFreeMotionIndex;
                 const RE::NiPoint3 rawPosition = rawOk ? rawHandWorld->translate : RE::NiPoint3{};
                 const RE::NiPoint3 targetPosition = targetOk ? palmTargetWorld.translate : RE::NiPoint3{};
@@ -112,14 +111,14 @@ namespace rock
                     "gameDt={:.6f} physicsPhase={} rawDt={:.6f} subDt={:.6f} driveDt={:.6f} substep={}/{} "
                     "progress={:.3f} rawToTarget={:.3f}gu/{:.3f}deg rawToLive={:.3f}gu/{:.3f}deg "
                     "targetToLive={:.3f}gu/{:.3f}deg rawPos=({:.2f},{:.2f},{:.2f}) targetPos=({:.2f},{:.2f},{:.2f}) "
-                    "livePos=({:.2f},{:.2f},{:.2f}) liveSource={} liveMotion={}",
+                    "livePos=({:.2f},{:.2f},{:.2f}) liveMotion={}",
                     stage ? stage : "unknown", hand.handName(), gameFrameIndex, hand.isHoldingAtomic() ? "yes" : "no",
                     rawState, targetState, liveState, hand.getCollisionBodyId().value,
                     hand.getGrabAuthorityProxyBodyId().value, gameDeltaSeconds, physicsPhase, rawDt, subDt, driveDt,
                     substepIndex, substepCount, progress, rawToTarget.position, rawToTarget.rotationDegrees,
                     rawToLive.position, rawToLive.rotationDegrees, targetToLive.position, targetToLive.rotationDegrees,
                     rawPosition.x, rawPosition.y, rawPosition.z, targetPosition.x, targetPosition.y, targetPosition.z,
-                    livePosition.x, livePosition.y, livePosition.z, palmSource, palmMotion);
+                    livePosition.x, livePosition.y, livePosition.z, palmMotion);
             };
 
             emit();

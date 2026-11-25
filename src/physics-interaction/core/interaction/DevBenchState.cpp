@@ -314,8 +314,7 @@ namespace rock
             grab["palmAuthority"] = hand.getGrabAuthorityProxyDebugSnapshot(hknp, proxy)
                 ? json{ { "palmBase", transformJson(proxy.palmAuthorityBaseWorld) },
                       { "proxyTarget", transformJson(proxy.proxyTargetWorld) },
-                      { "localOffsetGameUnits", pointJson(proxy.localOffsetGameUnits) },
-                      { "palmSource", body_frame::bodyFrameSourceName(proxy.palmSource) } }
+                      { "localOffsetGameUnits", pointJson(proxy.localOffsetGameUnits) } }
                 : json(nullptr);
         }
         out["grab"] = std::move(grab);

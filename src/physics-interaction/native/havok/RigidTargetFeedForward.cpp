@@ -77,7 +77,7 @@ namespace rock::rigid_target_feed_forward
         state.previousTarget = target;
 
         RE::NiTransform body{};
-        if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, bodyId, body) || !transform_math::isFiniteTransform(body))
+        if (!havok_runtime::tryGetGeneratedBodyFrame(world, bodyId, body) || !transform_math::isFiniteTransform(body))
             return Outcome::Failed;
         const auto moved = swapAxisStorage(transform_math::composeTransforms(motion, swapAxisStorage(body)));
         alignas(16) float linearHavok[4]{};

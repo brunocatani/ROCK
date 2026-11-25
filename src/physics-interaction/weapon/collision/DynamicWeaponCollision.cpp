@@ -1110,7 +1110,7 @@ namespace rock
 
             RE::NiTransform liveContactBodyWorld{};
             const bool hasLiveContactBody =
-                havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), liveContactBodyWorld) &&
+                havok_runtime::tryGetGeneratedBodyFrame(world, _body.getBodyId(), liveContactBodyWorld) &&
                 transform_math::isInvertibleTransform(liveContactBodyWorld);
             const float requestedGapGameUnits = hasLiveContactBody
                 ? dynamic_weapon_collision_policy::translationDeltaGameUnits(liveContactBodyWorld,
@@ -1230,7 +1230,7 @@ namespace rock
         _droveThisSubstep = false;
 
         RE::NiTransform liveBodyWorld{};
-        if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, _body.getBodyId(), liveBodyWorld) ||
+        if (!havok_runtime::tryGetGeneratedBodyFrame(world, _body.getBodyId(), liveBodyWorld) ||
             !transform_math::isInvertibleTransform(liveBodyWorld)) {
             _contactRetentionSeconds = 0.0f;
             clearPublishedPhysicsSnapshot();
@@ -1297,7 +1297,7 @@ namespace rock
             diagnostic.otherMotionIndex = otherBodySnapshot.motionIndex;
             diagnostic.otherCollisionObject = reinterpret_cast<std::uintptr_t>(otherBodySnapshot.collisionObject);
             diagnostic.otherOwnerNode = reinterpret_cast<std::uintptr_t>(otherBodySnapshot.ownerNode);
-            diagnostic.otherBodyWorldValid = havok_runtime::tryResolveLiveBodyWorldTransform(world,
+            diagnostic.otherBodyWorldValid = havok_runtime::tryGetBodyArrayWorldTransform(world,
                                                  RE::hknpBodyId{ otherBodyId }, diagnostic.otherBodyWorld) &&
                 transform_math::isInvertibleTransform(diagnostic.otherBodyWorld);
 

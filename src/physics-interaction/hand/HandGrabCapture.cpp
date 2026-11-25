@@ -161,13 +161,6 @@ namespace rock
             return result;
         }
 
-        RE::NiTransform getLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
-        {
-            RE::NiTransform result = makeIdentityTransform();
-            tryResolveLiveBodyWorldTransform(world, bodyId, result);
-            return result;
-        }
-
         void logRuntimeScaleIfChanged(bool isLeft, const char* handName, const RE::NiTransform& handWorldTransform,
             const RE::NiAVObject* collidableNode)
         {
@@ -348,7 +341,7 @@ namespace rock
     {
         performance_profiler::ScopedTimer stageTimer(performance_profiler::Scope::GrabProxyPreparation);
         outPreparation = {};
-        outPreparation.handBodyWorldAtGrab = getLiveBodyWorldTransform(world, _handBody.getBodyId());
+        (void)havok_runtime::tryGetGeneratedBodyFrame(world, _handBody.getBodyId(), outPreparation.handBodyWorldAtGrab);
         outPreparation.proxyFrameWorldAtGrab = outPreparation.handBodyWorldAtGrab;
         if (!resolveGrabAuthorityProxyFrame(world, outPreparation.proxyFrameWorldAtGrab,
                 outPreparation.proxyFrameSourceAtGrab, GrabAuthorityProxyFramePolicy::LivePalmOnly)) {

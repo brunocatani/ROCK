@@ -66,8 +66,6 @@ namespace rock
         return havok_runtime::getOwnerNodeFromBody(world, bodyId);
     }
 
-    using ResolvedBodyWorldTransform = havok_runtime::ResolvedBodyWorldTransform;
-
     inline RE::NiTransform bodyArrayWorldTransform(const RE::hknpBody& body)
     {
         return havok_runtime::bodyArrayWorldTransform(body);
@@ -82,24 +80,6 @@ namespace rock
     inline bool tryGetBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId, RE::NiTransform& outTransform)
     {
         return havok_runtime::tryGetBodyWorldTransform(world, bodyId, outTransform);
-    }
-
-    inline bool tryGetMotionWorldTransform(RE::hknpWorld* world, const RE::hknpBody& body,
-        RE::NiTransform& outTransform)
-    {
-        return havok_runtime::tryGetMotionWorldTransform(world, body, outTransform);
-    }
-
-    inline ResolvedBodyWorldTransform resolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId)
-    {
-        return havok_runtime::resolveLiveBodyWorldTransform(world, bodyId);
-    }
-
-    inline bool tryResolveLiveBodyWorldTransform(RE::hknpWorld* world, RE::hknpBodyId bodyId,
-        RE::NiTransform& outTransform, body_frame::BodyFrameSource* outSource = nullptr,
-        std::uint32_t* outMotionIndex = nullptr)
-    {
-        return havok_runtime::tryResolveLiveBodyWorldTransform(world, bodyId, outTransform, outSource, outMotionIndex);
     }
 
     inline RE::hkVector4f niRotToHkQuat(const RE::NiMatrix3& m)

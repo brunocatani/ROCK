@@ -119,13 +119,12 @@ namespace rock
             result.targetHavokPosition = havokTranslationToGamePoint(targetHavok);
         }
 
-        void fillLiveBodyTelemetry(const RE::NiTransform& liveTransform, body_frame::BodyFrameSource frameSource,
-            std::uint32_t motionIndex, const RE::NiTransform& target, GeneratedKeyframedBodyDriveResult& result)
+        void fillLiveBodyTelemetry(const RE::NiTransform& liveTransform, std::uint32_t motionIndex,
+            const RE::NiTransform& target, GeneratedKeyframedBodyDriveResult& result)
         {
             result.hasLiveBodyTransform = true;
             result.liveBodyGameTransform = liveTransform;
             result.liveBodyGamePosition = liveTransform.translate;
-            result.liveBodyFrameSource = frameSource;
             result.motionIndex = motionIndex;
             result.bodyDeltaGameUnits = body_frame::distance(liveTransform.translate, target.translate);
             fillRequiredVelocityTelemetry(liveTransform, target, result.driveDeltaSeconds, result);
@@ -137,11 +136,11 @@ namespace rock
             GeneratedKeyframedBodyDriveResult& result, RE::NiTransform* outLiveTransform = nullptr)
         {
             fillTargetTelemetry(target, targetHavok, result);
-            const auto live = havok_runtime::resolveLiveBodyWorldTransform(world, liveBody);
-            if (live.valid) {
+            RE::NiTransform live{};
+            if (havok_runtime::tryGetGeneratedBodyFrame(world, liveBody, live)) {
                 if (outLiveTransform)
-                    *outLiveTransform = live.transform;
-                fillLiveBodyTelemetry(live.transform, live.source, live.motionIndex, target, result);
+                    *outLiveTransform = live;
+                fillLiveBodyTelemetry(live, liveBody.motionIndex, target, result);
             }
         }
 
@@ -168,7 +167,7 @@ namespace rock
             ROCK_LOG_SAMPLE_DEBUG(Physics, g_rockConfig.rockLogSampleMilliseconds,
                 "Generated keyframed body drive owner={} bodyIndex={} bodyId={} phase={} substep={}/{} progress={:.3f} "
                 "targetGame=({:.2f},{:.2f},{:.2f}) targetHavok=({:.4f},{:.4f},{:.4f}) bodyGame=({:.2f},{:.2f},{:.2f}) "
-                "bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) bodySource={} motion={} "
+                "bodyDeltaGame={:.2f} bodyRotErr={:.2f} axisDeg=({:.1f},{:.1f},{:.1f}) motion={} "
                 "rawDt={:.6f} subDt={:.6f} simulatedDt={:.6f} driveDt={:.6f} sourceDt={:.6f} sourceAge={:.6f} "
                 "predictLead={:.6f} stale={} noSourceSteps={} reqLinHavok={:.2f} reqAng={:.2f} "
                 "uncappedReqLinHavok={:.2f} uncappedReqAng={:.2f} linCap={} angCap={} capAlpha={:.3f} substeps={} "
@@ -183,8 +182,6 @@ namespace rock
                 result.hasLiveBodyTransform ? result.targetToBodyAxisXDegrees : -1.0f,
                 result.hasLiveBodyTransform ? result.targetToBodyAxisYDegrees : -1.0f,
                 result.hasLiveBodyTransform ? result.targetToBodyAxisZDegrees : -1.0f,
-                result.hasLiveBodyTransform ? body_frame::bodyFrameSourceName(result.liveBodyFrameSource)
-                                            : "unreadable",
                 result.motionIndex, timing.rawDeltaSeconds, timing.substepDeltaSeconds, timing.simulatedDeltaSeconds,
                 result.driveDeltaSeconds, result.sourceDeltaSeconds, result.sourceAgeSeconds,
                 result.predictionLeadSeconds, result.sourceStale ? "yes" : "no", result.stepsWithoutSource,
@@ -552,7 +549,7 @@ namespace rock
                 target = limitedTarget.target;
                 targetHavok = HavokTransform::fromColumnAxes(target);
                 fillTargetTelemetry(target, targetHavok, result);
-                fillLiveBodyTelemetry(liveTransform, result.liveBodyFrameSource, result.motionIndex, target, result);
+                fillLiveBodyTelemetry(liveTransform, result.motionIndex, target, result);
             }
         }
 

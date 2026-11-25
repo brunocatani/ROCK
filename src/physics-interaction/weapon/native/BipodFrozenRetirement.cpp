@@ -140,7 +140,7 @@ namespace rock::bipod_frozen_retirement
                 trace.body = body.bodyId;
                 trace.stage = "body-pose-read";
                 RE::NiTransform current{};
-                if (!havok_runtime::tryResolveLiveBodyWorldTransform(world, RE::hknpBodyId{ body.bodyId }, current))
+                if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ body.bodyId }, current))
                     return false;
                 const auto target =
                     transform_math::composeTransforms(s_pose, transform_math::composeTransforms(rootInverse, current));

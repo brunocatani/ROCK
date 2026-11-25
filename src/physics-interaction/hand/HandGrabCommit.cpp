@@ -453,15 +453,15 @@ namespace rock
             _grabFrame.authority.bodyLocal.translate.z, _grabFrame.authority.bodyLocal.scale);
 
         {
-            RE::NiTransform handBodyDiag{};
-            RE::NiTransform objectBodyDiag{};
-            const bool hasLiveDiag = tryResolveLiveBodyWorldTransform(world, _handBody.getBodyId(), handBodyDiag) &&
-                tryResolveLiveBodyWorldTransform(world, objectBodyId, objectBodyDiag);
+            RE::NiPoint3 handBodyDiag{};
+            RE::NiPoint3 objectBodyDiag{};
+            const bool hasLiveDiag = havok_runtime::tryGetBodyCenterWorld(world, _handBody.getBodyId(), handBodyDiag) &&
+                havok_runtime::tryGetBodyCenterWorld(world, objectBodyId, objectBodyDiag);
             if (hasLiveDiag) {
                 ROCK_LOG_TRACE(Hand,
                     "{} DIAG: handBodyLive pos=({:.1f},{:.1f},{:.1f}) objBodyLive pos=({:.1f},{:.1f},{:.1f})",
-                    handName(), handBodyDiag.translate.x, handBodyDiag.translate.y, handBodyDiag.translate.z,
-                    objectBodyDiag.translate.x, objectBodyDiag.translate.y, objectBodyDiag.translate.z);
+                    handName(), handBodyDiag.x, handBodyDiag.y, handBodyDiag.z, objectBodyDiag.x, objectBodyDiag.y,
+                    objectBodyDiag.z);
             }
             ROCK_LOG_TRACE(Hand, "{} DIAG: handNi pos=({:.1f},{:.1f},{:.1f}) objNi pos=({:.1f},{:.1f},{:.1f})",
                 handName(), handWorldTransform.translate.x, handWorldTransform.translate.y,
@@ -471,8 +471,7 @@ namespace rock
             float comX, comY, comZ;
             if (getBodyCOMWorld(world, objectBodyId, comX, comY, comZ) && hasLiveDiag) {
                 ROCK_LOG_TRACE(Hand, "{} B8 COM LIVE: comHk=({:.3f},{:.3f},{:.3f}) objBodyLive=({:.1f},{:.1f},{:.1f})",
-                    handName(), comX, comY, comZ, objectBodyDiag.translate.x, objectBodyDiag.translate.y,
-                    objectBodyDiag.translate.z);
+                    handName(), comX, comY, comZ, objectBodyDiag.x, objectBodyDiag.y, objectBodyDiag.z);
             }
         }
 
