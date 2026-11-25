@@ -47,6 +47,11 @@ int main()
     const float negative = hingeCoordinate(0.25f, { 1.0f, 0.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
     assert(std::abs(negative - (0.25f - halfPi)) < 1.0e-5f);
 
+    // A quarter turn around an offset pivot; the hand also moves along the axis, which turns nothing.
+    const float step =
+        hingeStep({ 10.0f, 0.0f, 0.0f }, { 12.0f, 0.0f, 5.0f }, { 10.0f, 3.0f, -3.0f }, { 0.0f, 0.0f, 1.0f });
+    assert(std::abs(step - halfPi) < 1.0e-5f);
+
     const float slider = prismaticCoordinate(2.0f, { 5.0f, 6.0f, 7.0f }, { 5.0f, 1.0f, 9.0f }, { 0.0f, -1.0f, 0.0f });
     assert(std::abs(slider - 7.0f) < 1.0e-6f);
 

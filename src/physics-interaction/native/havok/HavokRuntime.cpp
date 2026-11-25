@@ -881,6 +881,27 @@ namespace rock::havok_runtime
         return true;
     }
 
+    bool setBodyMass(RE::hknpWorld* world, std::uint32_t bodyId, const float mass)
+    {
+        const auto* body = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });
+        if (!body || body->motionIndex == 0 || !std::isfinite(mass) || mass <= 0.0f) {
+            return false;
+        }
+
+        using SetBodyMass_t = void (*)(void*, std::uint32_t, float);
+        static REL::Relocation<SetBodyMass_t> setMass{ REL::Offset(offsets::kFunc_SetBodyMass) };
+        setMass(world, bodyId, mass);
+        // A shape without a mass of its own divides by zero; its packed inverse values then hold infinity.
+        std::array<std::uint16_t, 4> packedInverse{};
+        const auto* motion = reinterpret_cast<const std::uint8_t*>(getMotion(world, body->motionIndex));
+        if (!motion) {
+            return false;
+        }
+        std::memcpy(packedInverse.data(), motion + 0x20, sizeof(packedInverse));
+        return std::none_of(packedInverse.begin(), packedInverse.end(),
+            [](const std::uint16_t value) { return (value & 0x7F80u) == 0x7F80u; });
+    }
+
     bool enableBodyFlags(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode)
     {
         auto* body = getReadableBodySlot(world, RE::hknpBodyId{ bodyId });

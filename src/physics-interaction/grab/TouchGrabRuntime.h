@@ -150,10 +150,11 @@ namespace rock
             RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, std::uint32_t worldGeneration,
             std::uint32_t skeletonGeneration, std::uint32_t providerGeneration, std::uint32_t collisionGeneration,
             TargetClass targetClass, ContactSource contactSource, bool closeObjectCandidate,
-            api::PowerArmorPoint powerArmorPoint = {}, bool heldGrip = false);
+            const RE::NiTransform& trackedHandWorld, api::PowerArmorPoint powerArmorPoint = {},
+            bool heldGrip = false);
 
-        void service(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, float deltaSeconds,
-            std::uint32_t worldGeneration, std::uint32_t skeletonGeneration, std::uint32_t providerGeneration,
+        void service(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const RE::NiTransform& rightTrackedHandWorld,
+            const RE::NiTransform& leftTrackedHandWorld, float deltaSeconds, std::uint32_t worldGeneration, std::uint32_t skeletonGeneration, std::uint32_t providerGeneration,
             std::uint32_t collisionGeneration);
 
         void releaseCommandOwner(std::uint64_t ownerToken, RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
@@ -180,8 +181,10 @@ namespace rock
             bool active = false;
             bool isLeft = false;
             std::uint64_t commandOwnerToken = 0;
-            std::uint32_t handBodyId = kInvalidId;
-            std::uint32_t constraintId = kInvalidId;
+            // A hinge or slider follows the grabbed point of the tracked hand along its own axis.
+            RE::NiPoint3 gripInTrackedHand{};
+            RE::NiPoint3 lastGripWorld{};
+            float gripCoordinate = 0.0f;
             bool hasContactPoint = false;
             bool hasContactNormal = false;
             bool surfaceLatch = false;
@@ -210,6 +213,7 @@ namespace rock
             RE::bhkNPCollisionObject* collisionObject = nullptr;
             BethesdaPhysicsBody anchor{};
             std::uint32_t mechanismConstraintId = kInvalidId;
+            void* mechanismData = nullptr; // Owned by the world's constraint.
             RE::NiTransform initialBodyWorld{};
             RE::NiPoint3 axisWorld{};
             RE::NiPoint3 initialHingeWitnessWorld{};
@@ -228,7 +232,8 @@ namespace rock
 
         [[nodiscard]] bool attachHand(ActiveTarget& active, bool isLeft,
             const hand_semantic_contact_state::SemanticContactRecord& contact, RE::hknpWorld* world,
-            ContactSource contactSource, api::PowerArmorPoint powerArmorPoint = {});
+            ContactSource contactSource, const RE::NiTransform& trackedHandWorld,
+            api::PowerArmorPoint powerArmorPoint = {});
         [[nodiscard]] bool createMechanism(ActiveTarget& active, RE::bhkWorld* bhkWorld, RE::hknpWorld* world);
 
         void releaseTarget(ActiveTarget& active, RE::bhkWorld* bhkWorld, RE::hknpWorld* world,
@@ -237,6 +242,8 @@ namespace rock
             ::rock::api::touch::TouchGrabReleaseReason reason, float coordinateVelocity,
             std::uint32_t collisionGeneration);
 
+        void driveMechanism(ActiveTarget& active, const RE::NiTransform& rightTrackedHandWorld,
+            const RE::NiTransform& leftTrackedHandWorld) noexcept;
         [[nodiscard]] float sampleCoordinate(ActiveTarget& active, RE::hknpWorld* world) const;
         [[nodiscard]] std::uint32_t activeHandMask(const ActiveTarget& active) const noexcept;
 

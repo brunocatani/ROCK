@@ -18,12 +18,15 @@
 #include "physics-interaction/native/havok/PhysicsUtils.h"
 #include "physics-interaction/native/query/PhysicsShapeCast.h"
 #include "physics-interaction/native/scene/ReferenceInteraction.h"
+#include "physics-interaction/object/PhysicsBodyClassifier.h"
 
 #include "RE/Bethesda/bhkCharacterController.h"
 #include "RE/Havok/hknpBody.h"
 #include "RE/Havok/hknpConstraintCinfo.h"
+#include "RE/NetImmerse/NiUpdateData.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <utility>
 
@@ -31,20 +34,18 @@ namespace rock
 {
     namespace
     {
-        constexpr std::size_t kBallAndSocketConstraintSize = 0x70;
         constexpr std::size_t kLimitedHingeConstraintSize = 0x130;
         constexpr std::size_t kPrismaticConstraintSize = 0x120;
         constexpr std::uint32_t kInvalidConstraintId = 0x7FFF'FFFFu;
+        constexpr float kMasslessMechanismMass = 10.0f;
 
         constexpr std::ptrdiff_t kLimitedHingeLimitEnabledOffset = 0xFA;
         constexpr std::ptrdiff_t kLimitedHingeMinimumOffset = 0xFC;
         constexpr std::ptrdiff_t kLimitedHingeMaximumOffset = 0x100;
-        constexpr std::ptrdiff_t kPrismaticLimitEnabledOffset = 0x10A;
         constexpr std::ptrdiff_t kPrismaticMinimumOffset = 0x10C;
         constexpr std::ptrdiff_t kPrismaticMaximumOffset = 0x110;
 
         using ConstraintDataCtor = void* (*)(void*);
-        using BallAndSocketSetPivots = void (*)(void*, const RE::hkVector4f&, const RE::hkVector4f&);
         using ConstraintSetInWorldSpace = void (*)(void*, const RE::hkTransformf&, const RE::hkTransformf&,
             const RE::hkVector4f&, const RE::hkVector4f&);
 
@@ -212,13 +213,18 @@ namespace rock
             if (!snapshot.valid || !snapshot.body) {
                 return provider::TouchGrabMotionClass::Other;
             }
-            if (snapshot.motionIndex == 0 || (snapshot.body->flags & 0x1u) != 0) {
+            if (snapshot.motionIndex == 0) {
                 return provider::TouchGrabMotionClass::Static;
             }
-            switch (snapshot.body->motionPropertiesId & 0xFFu) {
-            case 1:
+            // Doors and drawers carry their own motion properties, so the properties id says nothing
+            // about how the body moves.
+            using physics_body_classifier::BodyMotionType;
+            switch (physics_body_classifier::motionTypeFromBodyFlags(snapshot.body->flags)) {
+            case BodyMotionType::Static:
+                return provider::TouchGrabMotionClass::Static;
+            case BodyMotionType::Dynamic:
                 return provider::TouchGrabMotionClass::Dynamic;
-            case 2:
+            case BodyMotionType::Keyframed:
                 return provider::TouchGrabMotionClass::Keyframed;
             default:
                 return provider::TouchGrabMotionClass::Other;
@@ -301,30 +307,9 @@ namespace rock
             return constraintId;
         }
 
-        [[nodiscard]] std::uint32_t createBallAndSocketConstraint(RE::hknpWorld* world, const std::uint32_t bodyIdA,
-            const std::uint32_t bodyIdB, const RE::NiTransform& bodyAWorld, const RE::NiTransform& bodyBWorld,
-            const RE::NiPoint3& pivotWorld)
-        {
-            auto* data = havok_runtime::allocateHavok(kBallAndSocketConstraintSize);
-            if (!data) {
-                return kInvalidConstraintId;
-            }
-            static REL::Relocation<ConstraintDataCtor> constructor{ REL::Offset(
-                offsets::kFunc_BallAndSocketConstraintData_Ctor) };
-            static REL::Relocation<BallAndSocketSetPivots> setPivots{ REL::Offset(
-                offsets::kFunc_BallAndSocketConstraintData_SetPivots) };
-            constructor(data);
-
-            const auto pivotA = makeHavokPoint(transform_math::worldPointToLocal(bodyAWorld, pivotWorld));
-            const auto pivotB = makeHavokPoint(transform_math::worldPointToLocal(bodyBWorld, pivotWorld));
-            setPivots(data, pivotA, pivotB);
-            return createStockConstraint(world, data, bodyIdA, bodyIdB);
-        }
-
         [[nodiscard]] std::uint32_t createLimitedHingeConstraint(RE::hknpWorld* world, const std::uint32_t bodyIdA,
             const std::uint32_t bodyIdB, const RE::NiTransform& bodyAWorld, const RE::NiTransform& bodyBWorld,
-            const RE::NiPoint3& pivotWorld, const RE::NiPoint3& axisWorld, const float minimumRelativeAngle,
-            const float maximumRelativeAngle)
+            const RE::NiPoint3& pivotWorld, const RE::NiPoint3& axisWorld, void*& outData)
         {
             auto* data = havok_runtime::allocateHavok(kLimitedHingeConstraintSize);
             if (!data) {
@@ -344,15 +329,15 @@ namespace rock
 
             auto* bytes = static_cast<std::uint8_t*>(data);
             bytes[kLimitedHingeLimitEnabledOffset] = 1;
-            *reinterpret_cast<float*>(bytes + kLimitedHingeMinimumOffset) = minimumRelativeAngle;
-            *reinterpret_cast<float*>(bytes + kLimitedHingeMaximumOffset) = maximumRelativeAngle;
+            *reinterpret_cast<float*>(bytes + kLimitedHingeMinimumOffset) = 0.0f;
+            *reinterpret_cast<float*>(bytes + kLimitedHingeMaximumOffset) = 0.0f;
+            outData = data;
             return createStockConstraint(world, data, bodyIdA, bodyIdB);
         }
 
         [[nodiscard]] std::uint32_t createPrismaticConstraint(RE::hknpWorld* world, const std::uint32_t bodyIdA,
             const std::uint32_t bodyIdB, const RE::NiTransform& bodyAWorld, const RE::NiTransform& bodyBWorld,
-            const RE::NiPoint3& pivotWorld, const RE::NiPoint3& axisWorld, const float minimumRelativeGame,
-            const float maximumRelativeGame)
+            const RE::NiPoint3& pivotWorld, const RE::NiPoint3& axisWorld, void*& outData)
         {
             auto* data = havok_runtime::allocateHavok(kPrismaticConstraintSize);
             if (!data) {
@@ -370,12 +355,32 @@ namespace rock
             const auto axis = makeHavokDirection(axisWorld);
             setInWorldSpace(data, transformA.native(), transformB.native(), pivot, axis);
 
-            const float scale = gameToHavokScale();
             auto* bytes = static_cast<std::uint8_t*>(data);
-            bytes[kPrismaticLimitEnabledOffset] = 1;
-            *reinterpret_cast<float*>(bytes + kPrismaticMinimumOffset) = minimumRelativeGame * scale;
-            *reinterpret_cast<float*>(bytes + kPrismaticMaximumOffset) = maximumRelativeGame * scale;
+            *reinterpret_cast<float*>(bytes + kPrismaticMinimumOffset) = 0.0f;
+            *reinterpret_cast<float*>(bytes + kPrismaticMaximumOffset) = 0.0f;
+            outData = data;
             return createStockConstraint(world, data, bodyIdA, bodyIdB);
+        }
+
+        /*
+         * Both limits at one value make the constraint itself hold the body at
+         * that coordinate, so a hand that leaves the arc never pulls the body
+         * off its axis. The physics step reads the limits while the frame
+         * thread writes them; the order keeps minimum at or below maximum.
+         */
+        void moveLimits(void* data, const std::ptrdiff_t minimumOffset, const std::ptrdiff_t maximumOffset,
+            const float value) noexcept
+        {
+            auto* bytes = static_cast<std::uint8_t*>(data);
+            std::atomic_ref<float> minimum(*reinterpret_cast<float*>(bytes + minimumOffset));
+            std::atomic_ref<float> maximum(*reinterpret_cast<float*>(bytes + maximumOffset));
+            if (value > maximum.load(std::memory_order_relaxed)) {
+                maximum.store(value, std::memory_order_release);
+                minimum.store(value, std::memory_order_release);
+            } else {
+                minimum.store(value, std::memory_order_release);
+                maximum.store(value, std::memory_order_release);
+            }
         }
 
         void destroyConstraint(RE::hknpWorld* world, std::uint32_t& constraintId)
@@ -485,7 +490,8 @@ namespace rock
         contact.hasContactPointGame = true;
         contact.contactPointGame = { candidate.positionGame.x, candidate.positionGame.y, candidate.positionGame.z };
         if (!tryAcquire(isLeft, contact, bhkWorld, world, worldGeneration, skeletonGeneration, providerGeneration,
-                collisionGeneration, TargetClass::Wildcard, ContactSource::DynamicSurface, false, candidate.point))
+                collisionGeneration, TargetClass::Wildcard, ContactSource::DynamicSurface, false, RE::NiTransform{},
+                candidate.point))
             return false;
         if (auto* active = findTargetForHand(isLeft)) {
             for (auto& hand : active->hands)
@@ -593,6 +599,7 @@ namespace rock
         active.collisionIdentity = nullptr;
         active.collisionObject = nullptr;
         active.mechanismConstraintId = kInvalidId;
+        active.mechanismData = nullptr;
         active.initialBodyWorld = {};
         active.axisWorld = {};
         active.initialHingeWitnessWorld = {};
@@ -606,8 +613,8 @@ namespace rock
         const hand_semantic_contact_state::SemanticContactRecord& contact, RE::bhkWorld* bhkWorld,
         RE::hknpWorld* hknpWorld, const std::uint32_t worldGeneration, const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration, const std::uint32_t collisionGeneration, const TargetClass targetClass,
-        const ContactSource contactSource, const bool closeObjectCandidate, const api::PowerArmorPoint powerArmorPoint,
-        const bool heldGrip)
+        const ContactSource contactSource, const bool closeObjectCandidate, const RE::NiTransform& trackedHandWorld,
+        const api::PowerArmorPoint powerArmorPoint, const bool heldGrip)
     {
         _lastAttemptReport = {
             .failure = AttemptFailure::InvalidInput,
@@ -704,7 +711,9 @@ namespace rock
             _lastAttemptReport.failure = AttemptFailure::MotionUnsupported;
             return false;
         }
-        if ((contactSource == ContactSource::DynamicSurface) != fixedAnchor) {
+        // A fixed anchor latches the dynamic hand. A mechanism takes either contact: a keyframed door
+        // or drawer touches only the dynamic hand, because two keyframed bodies make no contact.
+        if (fixedAnchor && contactSource != ContactSource::DynamicSurface) {
             _lastAttemptReport.failure = AttemptFailure::ContactKindMismatch;
             return false;
         }
@@ -767,7 +776,7 @@ namespace rock
             }
             auto structuralMutation = _physicsCallbackGate ? _physicsCallbackGate->pauseForMutation()
                                                            : PhysicsCallbackQuiescenceGate::MutationLease{};
-            if (!attachHand(*active, isLeft, contact, hknpWorld, contactSource, powerArmorPoint)) {
+            if (!attachHand(*active, isLeft, contact, hknpWorld, contactSource, trackedHandWorld, powerArmorPoint)) {
                 _lastAttemptReport.failure = AttemptFailure::HandAttachmentFailed;
                 return false;
             }
@@ -819,7 +828,7 @@ namespace rock
             _lastAttemptReport.failure = AttemptFailure::MechanismCreationFailed;
             return false;
         }
-        if (!attachHand(*active, isLeft, contact, hknpWorld, contactSource, powerArmorPoint)) {
+        if (!attachHand(*active, isLeft, contact, hknpWorld, contactSource, trackedHandWorld, powerArmorPoint)) {
             releaseTarget(*active, bhkWorld, hknpWorld, ::rock::api::touch::TouchGrabReleaseReason::TargetInvalid,
                 collisionGeneration, true);
             _lastAttemptReport.failure = AttemptFailure::HandAttachmentFailed;
@@ -879,6 +888,13 @@ namespace rock
 
         if (active.originalMotionClass == provider::TouchGrabMotionClass::Keyframed) {
             active.collisionObject->SetMotionType(RE::hknpMotionPropertiesId::Preset::DYNAMIC);
+            // The engine makes a body dynamic only when its file gives it a mass; animated doors and
+            // drawers have none.
+            const auto snapshot = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ active.bodyId });
+            if (snapshot.valid && classifyMotion(snapshot) == provider::TouchGrabMotionClass::Keyframed &&
+                !havok_runtime::setBodyMass(world, active.bodyId, kMasslessMechanismMass)) {
+                return false;
+            }
         }
         const auto dynamicSnapshot = havok_runtime::snapshotBodyIdentity(world, RE::hknpBodyId{ active.bodyId });
         if (!dynamicSnapshot.valid || dynamicSnapshot.collisionObject != active.collisionObject ||
@@ -891,16 +907,15 @@ namespace rock
             return false;
         }
 
-        const float minimumRelative = active.target.minimumCoordinate - active.initialCoordinate;
-        const float maximumRelative = active.target.maximumCoordinate - active.initialCoordinate;
+        // Havok measures a limit as body A relative to body B.
         if (active.target.kind == ::rock::api::touch::TouchGrabKind::LimitedHinge) {
-            active.mechanismConstraintId = createLimitedHingeConstraint(world, active.anchor.getBodyId().value,
-                active.bodyId, anchorWorld, liveBodyWorld, toNiPoint(active.target.pivotWorldGame), active.axisWorld,
-                minimumRelative, maximumRelative);
+            active.mechanismConstraintId = createLimitedHingeConstraint(world, active.bodyId,
+                active.anchor.getBodyId().value, liveBodyWorld, anchorWorld, toNiPoint(active.target.pivotWorldGame), active.axisWorld,
+                active.mechanismData);
         } else if (active.target.kind == ::rock::api::touch::TouchGrabKind::LimitedPrismatic) {
-            active.mechanismConstraintId = createPrismaticConstraint(world, active.anchor.getBodyId().value,
-                active.bodyId, anchorWorld, liveBodyWorld, toNiPoint(active.target.pivotWorldGame), active.axisWorld,
-                minimumRelative, maximumRelative);
+            active.mechanismConstraintId = createPrismaticConstraint(world, active.bodyId,
+                active.anchor.getBodyId().value, liveBodyWorld, anchorWorld, toNiPoint(active.target.pivotWorldGame), active.axisWorld,
+                active.mechanismData);
         }
         if (active.mechanismConstraintId == kInvalidConstraintId) {
             return false;
@@ -911,7 +926,8 @@ namespace rock
 
     bool TouchGrabRuntime::attachHand(ActiveTarget& active, const bool isLeft,
         const hand_semantic_contact_state::SemanticContactRecord& contact, RE::hknpWorld* world,
-        const ContactSource contactSource, const api::PowerArmorPoint powerArmorPoint)
+        const ContactSource contactSource, const RE::NiTransform& trackedHandWorld,
+        const api::PowerArmorPoint powerArmorPoint)
     {
         HandAttachment* attachment = nullptr;
         std::size_t activeHands = 0;
@@ -947,7 +963,6 @@ namespace rock
             contactNormal = { contact.contactNormalGame.x, contact.contactNormalGame.y, contact.contactNormalGame.z };
         }
 
-        std::uint32_t constraintId = kInvalidConstraintId;
         bool surfaceLatch = false;
         float shellToMeshDistanceGameUnits = 0.0f;
         SurfaceMeshAcquisition meshAcquisition{};
@@ -1014,28 +1029,30 @@ namespace rock
                 shellToMeshDistanceGameUnits = meshAcquisition.presentation.shellToMeshDistanceGameUnits;
             }
         } else {
-            RE::NiTransform handBodyWorld{};
-            RE::NiTransform targetBodyWorld{};
-            if (!havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ contact.handBodyId },
-                    handBodyWorld) ||
-                !havok_runtime::tryGetBodyArrayWorldTransform(world, RE::hknpBodyId{ active.bodyId },
-                    targetBodyWorld)) {
+            if (!transform_math::isInvertibleTransform(trackedHandWorld)) {
                 return false;
             }
             if (!hasContactPoint) {
-                contactPoint = handBodyWorld.translate;
+                contactPoint = trackedHandWorld.translate;
             }
-            constraintId = createBallAndSocketConstraint(world, contact.handBodyId, active.bodyId, handBodyWorld,
-                targetBodyWorld, contactPoint);
-            if (constraintId == kInvalidConstraintId) {
-                return false;
-            }
+            attachment->gripInTrackedHand = transform_math::worldPointToLocal(trackedHandWorld, contactPoint);
+            attachment->lastGripWorld = contactPoint;
+            attachment->gripCoordinate = active.lastCoordinate;
+            // The hand is drawn on the body it moves.
+            const dynamic_hand_surface_contact_state::ContactSource latchSource{
+                .valid = true,
+                .isLeft = isLeft,
+                .slot = 0,
+                .role = hand_collider_semantics::HandColliderRole::PalmAnchor,
+                .bodyId = _dynamicHandCollision ? _dynamicHandCollision->proxyBodyIdForDebug(isLeft, 0).value
+                                                : kInvalidId,
+            };
+            surfaceLatch = _dynamicHandCollision &&
+                _dynamicHandCollision->beginSurfaceLatch(latchSource, active.bodyId, world);
         }
 
         attachment->active = true;
         attachment->isLeft = isLeft;
-        attachment->handBodyId = contact.handBodyId;
-        attachment->constraintId = constraintId;
         attachment->surfaceLatch = surfaceLatch;
         attachment->hasContactPoint = hasContactPoint;
         attachment->contactPointGame = contactPoint;
@@ -1071,8 +1088,9 @@ namespace rock
         return true;
     }
 
-    void TouchGrabRuntime::service(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld, const float deltaSeconds,
-        const std::uint32_t worldGeneration, const std::uint32_t skeletonGeneration,
+    void TouchGrabRuntime::service(RE::bhkWorld* bhkWorld, RE::hknpWorld* hknpWorld,
+        const RE::NiTransform& rightTrackedHandWorld, const RE::NiTransform& leftTrackedHandWorld,
+        const float deltaSeconds, const std::uint32_t worldGeneration, const std::uint32_t skeletonGeneration,
         const std::uint32_t providerGeneration, const std::uint32_t collisionGeneration)
     {
         const bool anyActive =
@@ -1248,9 +1266,54 @@ namespace rock
             active.lastCoordinate = coordinate;
             if (active.target.kind != ::rock::api::touch::TouchGrabKind::FixedAnchor) {
                 havok_runtime::activateBody(hknpWorld, active.bodyId);
+                driveMechanism(active, rightTrackedHandWorld, leftTrackedHandWorld);
+                // The engine writes a dynamic body onto its node only when the node updates, and
+                // nothing updates a fixed prop's node.
+                if (auto* node = active.collisionObject->sceneObject) {
+                    RE::NiUpdateData update{};
+                    node->UpdateTransforms(update);
+                }
             }
             publishState(active, ::rock::api::touch::TouchGrabPhase::Held,
                 ::rock::api::touch::TouchGrabReleaseReason::None, coordinateVelocity, collisionGeneration);
+        }
+    }
+
+    void TouchGrabRuntime::driveMechanism(ActiveTarget& active, const RE::NiTransform& rightTrackedHandWorld,
+        const RE::NiTransform& leftTrackedHandWorld) noexcept
+    {
+        const auto axis = toMathPoint(active.axisWorld);
+        const auto pivot = toMathPoint(toNiPoint(active.target.pivotWorldGame));
+        float sum = 0.0f;
+        std::uint32_t count = 0;
+        for (auto& hand : active.hands) {
+            if (!hand.active) {
+                continue;
+            }
+            const auto& handWorld = hand.isLeft ? leftTrackedHandWorld : rightTrackedHandWorld;
+            const auto grip = transform_math::localPointToWorld(handWorld, hand.gripInTrackedHand);
+            if (finitePoint(grip)) {
+                const auto previous = toMathPoint(hand.lastGripWorld);
+                hand.gripCoordinate += active.target.kind == ::rock::api::touch::TouchGrabKind::LimitedHinge
+                    ? touch_grab_math::hingeStep(pivot, previous, toMathPoint(grip), axis)
+                    : touch_grab_math::prismaticCoordinate(0.0f, previous, toMathPoint(grip), axis);
+                hand.lastGripWorld = grip;
+            }
+            sum += hand.gripCoordinate;
+            ++count;
+        }
+        if (count == 0 || !active.mechanismData) {
+            return;
+        }
+        // Two hands share the mechanism.
+        const float relative = std::clamp(sum / static_cast<float>(count), active.target.minimumCoordinate,
+                                   active.target.maximumCoordinate) -
+            active.initialCoordinate;
+        if (active.target.kind == ::rock::api::touch::TouchGrabKind::LimitedHinge) {
+            moveLimits(active.mechanismData, kLimitedHingeMinimumOffset, kLimitedHingeMaximumOffset, relative);
+        } else {
+            moveLimits(active.mechanismData, kPrismaticMinimumOffset, kPrismaticMaximumOffset,
+                relative * gameToHavokScale());
         }
     }
 
@@ -1385,7 +1448,6 @@ namespace rock
             if (!hand.active || hand.isLeft != isLeft) {
                 continue;
             }
-            destroyConstraint(hknpWorld, hand.constraintId);
             if (hand.surfaceLatch && _dynamicHandCollision) {
                 _dynamicHandCollision->endSurfaceLatch(isLeft);
             }
@@ -1398,6 +1460,9 @@ namespace rock
                 ? 0.0f
                 : std::clamp(sampleCoordinate(*active, hknpWorld), active->target.minimumCoordinate,
                       active->target.maximumCoordinate);
+            for (auto& hand : active->hands) {
+                hand.gripCoordinate = active->lastCoordinate;
+            }
             publishState(*active, ::rock::api::touch::TouchGrabPhase::Held,
                 ::rock::api::touch::TouchGrabReleaseReason::None, 0.0f, collisionGeneration);
             return;
@@ -1438,7 +1503,6 @@ namespace rock
                 active.target.maximumCoordinate);
         }
         for (auto& hand : active.hands) {
-            destroyConstraint(world, hand.constraintId);
             if (hand.surfaceLatch && _dynamicHandCollision) {
                 _dynamicHandCollision->endSurfaceLatch(hand.isLeft);
             }

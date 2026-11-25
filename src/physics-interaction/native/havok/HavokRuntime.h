@@ -184,6 +184,9 @@ namespace rock::havok_runtime
     bool setBodyTransformDeferred(RE::hknpWorld* world, std::uint32_t bodyId, const RE::NiTransform& transform,
         int mode = 1);
     bool activateBody(RE::hknpWorld* world, std::uint32_t bodyId);
+
+    // Makes a moving body dynamic with this mass; its inertia comes from its shape when the motion has none.
+    bool setBodyMass(RE::hknpWorld* world, std::uint32_t bodyId, float mass);
     bool enableBodyFlags(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode);
     bool disableBodyFlags(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode);
     bool acquireBodyFlagLease(RE::hknpWorld* world, std::uint32_t bodyId, std::uint32_t flags, std::uint32_t mode,

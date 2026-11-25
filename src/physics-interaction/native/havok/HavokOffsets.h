@@ -139,6 +139,8 @@ namespace rock::offsets
 
     constexpr std::uintptr_t kFunc_SetBodyKeyframed = 0x1DF5CB0;
 
+    constexpr std::uintptr_t kFunc_SetBodyMass = 0x153B640;
+
     constexpr std::uintptr_t kFunc_ComputeHardKeyFrame = 0x153a6a0;
 
     constexpr std::uintptr_t kFunc_RebuildMotionMassProperties = 0x1546570;
@@ -373,8 +375,6 @@ namespace rock::offsets
      *   Limited hinge:   0x130
      *   Prismatic:       0x120
      */
-    constexpr std::uintptr_t kFunc_BallAndSocketConstraintData_Ctor = 0x19AF690;
-    constexpr std::uintptr_t kFunc_BallAndSocketConstraintData_SetPivots = 0x19AF6E0;
     constexpr std::uintptr_t kFunc_LimitedHingeConstraintData_Ctor = 0x19ACA30;
     constexpr std::uintptr_t kFunc_LimitedHingeConstraintData_SetInWorldSpace = 0x19ACD90;
     constexpr std::uintptr_t kFunc_PrismaticConstraintData_Ctor = 0x19B1350;

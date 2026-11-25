@@ -421,6 +421,44 @@ namespace rock
                 add(held, heldCount, bodyId, bit);
             }
         }
+        /*
+         * A hinge or slider moves with the hand that holds it: that hand's and
+         * arm's colliders start inside its collision and would push it back
+         * against the pull. Only their pairs with that body drop.
+         */
+        for (const bool isLeft : { false, true }) {
+            TouchGrabRuntime::HandReport report{};
+            if (!_touchGrabRuntime.getHandReport(isLeft, report) ||
+                report.kind == ::rock::api::touch::TouchGrabKind::FixedAnchor) {
+                continue;
+            }
+            const Hand& hand = isLeft ? _leftHand : _rightHand;
+            const std::uint8_t bit = isLeft ? 2 : 1;
+            const auto ownSide = isLeft ? body_zone::BodyZoneSide::Left : body_zone::BodyZoneSide::Right;
+            const std::uint32_t bodyCount = _bodyBoneColliders.getBodyCount();
+            for (std::uint32_t i = 0; i < bodyCount; ++i) {
+                const auto bodyId = _bodyBoneColliders.getBodyIdAtomic(i);
+                BodyBoneColliderMetadata metadata{};
+                if (_bodyBoneColliders.tryGetBodyMetadataAtIndexAtomic(i, bodyId, metadata) && metadata.valid &&
+                    metadata.side == ownSide &&
+                    (metadata.role == body_collider::Role::ForearmSegment ||
+                        metadata.role == body_collider::Role::HandSegment)) {
+                    add(colliders, colliderCount, bodyId, bit);
+                }
+            }
+            const std::uint32_t handColliderCount = hand.getHandColliderBodyCount();
+            for (std::uint32_t i = 0; i < handColliderCount; ++i) {
+                const auto bodyId = hand.getHandColliderBodyIdAtomic(i);
+                if (bodyId != INVALID_BODY_ID) {
+                    add(colliders, colliderCount, bodyId, bit);
+                }
+            }
+            const auto proxyId = _dynamicHandCollision.proxyBodyIdForDebug(isLeft, 0).value;
+            if (proxyId != INVALID_BODY_ID) {
+                add(colliders, colliderCount, proxyId, bit);
+            }
+            add(held, heldCount, report.bodyId, bit);
+        }
         native_player_collision::publishHeldExclusions(world, std::span(colliders).first(colliderCount),
             std::span(held).first(heldCount));
     }

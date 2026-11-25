@@ -25,6 +25,12 @@ Interface `Touch`, major 2, minor 0; major 1 is refused with
   or `LimitedPrismatic` (hand drives a one-axis mechanism around
   `pivotWorldGame`/`axisWorldGame` between `minimumCoordinate` and
   `maximumCoordinate`, starting at `currentCoordinate`).
+- A hinge or slider follows the tracked hand along its own axis only, so it never
+  leaves its axis, and two hands share it. A keyframed body is dynamic while held,
+  also when its file gives it no mass, and keyframed again on release. The holding
+  hand is drawn on the body and does not collide with it. ROCK moves the body and
+  the node that owns its collision; when your visible node is a parent of that
+  node, pose it from the reported coordinate.
 - `bodyId` names one body; with `MatchAnyBody`, a `FixedAnchor` target instead
   matches any body whose layer is in `allowedLayerMask` and whose motion type
   is enabled by the `Match...Motion` flags.

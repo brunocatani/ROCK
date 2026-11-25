@@ -70,6 +70,22 @@ namespace rock::touch_grab_math
         return initialCoordinate + signedAngle(initialWitnessWorld, currentWitnessWorld, axisWorld);
     }
 
+    // How far a point turned around the hinge axis from one frame to the next, in radians.
+    [[nodiscard]] inline float hingeStep(const Vector3& pivot, const Vector3& previousPoint,
+        const Vector3& currentPoint, const Vector3& axisValue)
+    {
+        Vector3 axis{};
+        if (!normalize(axisValue, axis)) {
+            return 0.0f;
+        }
+        const auto radial = [&](const Vector3& point) {
+            const Vector3 arm = point - pivot;
+            const float along = dot(arm, axis);
+            return arm - Vector3{ axis.x * along, axis.y * along, axis.z * along };
+        };
+        return signedAngle(radial(previousPoint), radial(currentPoint), axis);
+    }
+
     [[nodiscard]] inline float prismaticCoordinate(const float initialCoordinate, const Vector3& initialOriginWorld,
         const Vector3& currentOriginWorld, const Vector3& axisWorld)
     {

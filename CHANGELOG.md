@@ -4,10 +4,12 @@
 
 ### Fixed
 
-- **Hinges and sliders from other mods turn the right way.** A door, lid or lever a
-  mod makes grabbable was tied to the hand, and its angle reported, through the
-  wrong axes of the object. A held surface that turns keeps the hand on the same
-  spot.
+- **Hinges and sliders from other mods work.** Doors and drawers the game animates
+  can be taken: ROCK held them as a fixed surface instead. They stay exactly on
+  their hinge or rail and follow the hand, which no longer pushes them back, up to
+  their own stops, and they are drawn where they are while held. A slider's limit
+  worked across its rail and a hinge's range was mirrored.
+- **A held surface that turns keeps the hand on the same spot.**
 - **A pulled object comes to the hand by the point ROCK chose.** That point drifted
   as the object turned in flight, more the longer the object.
 - **For mod authors: Touch 2.0 reports the real coordinate, contact point and

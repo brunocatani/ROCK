@@ -972,7 +972,8 @@ namespace rock
                     for (std::size_t index = 0; index < candidates.count; ++index) {
                         if (_touchGrabRuntime.tryAcquire(isLeft, candidates.records[index], frame.bhkWorld,
                                 frame.hknpWorld, worldGeneration, skeletonGeneration, providerGeneration,
-                                collisionGeneration, targetClass, source, closeObjectCandidate, {}, heldGripLatch)) {
+                                collisionGeneration, targetClass, source, closeObjectCandidate,
+                                isLeft ? frame.left.rawHandWorld : frame.right.rawHandWorld, {}, heldGripLatch)) {
                             return true;
                         }
                     }
@@ -2801,8 +2802,8 @@ namespace rock
         const auto providerGeneration = _lifecycle.providerGenerationAtomic.load(std::memory_order_acquire);
         const auto collisionGeneration = _lifecycle.collisionGenerationAtomic.load(std::memory_order_acquire);
         _touchGrabRuntime.setGlobalSurfaceGrabEnabled(g_rockConfig.rockGlobalSurfaceGrabEnabled);
-        _touchGrabRuntime.service(frame.bhkWorld, frame.hknpWorld, frame.deltaSeconds, worldGeneration,
-            skeletonGeneration, providerGeneration, collisionGeneration);
+        _touchGrabRuntime.service(frame.bhkWorld, frame.hknpWorld, frame.right.rawHandWorld, frame.left.rawHandWorld,
+            frame.deltaSeconds, worldGeneration, skeletonGeneration, providerGeneration, collisionGeneration);
         if (frame.menuBlocked) {
             _grabInput.intentStates = {};
             _touchGrabRuntime.releaseAll(frame.bhkWorld, frame.hknpWorld,
