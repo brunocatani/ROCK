@@ -178,7 +178,7 @@ Settings are edited in game with [Mods Config FO4 VR](https://www.nexusmods.com/
 
 ### The setup wizard
 
-The setup wizard asks what matters on your first start: your controllers, then the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus). **Use recommended settings** sets them all at once. Open it again any time with **Setup Wizard** on ROCK's front page, or with **Setup wizard** on the ROCK tab of RobCo PALM's Config. More in the [main README](../README.md#the-setup-wizard).
+The setup wizard asks what matters on your first start: your controllers, then the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus). **Use recommended settings** sets them all at once. Open it again any time with **Setup Wizard** on ROCK's front page. More in the [main README](../README.md#the-setup-wizard).
 
 ### The config file
 

@@ -86,9 +86,9 @@ Menu names can differ between SteamVR versions. After that, the `[ControllerInpu
 
 ### The setup wizard
 
-ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. Open it again any time with the Setup Wizard button on ROCK's page in Mods Config FO4 VR, or with **Setup wizard** on the ROCK tab of RobCo PALM's Config.
+ROCK's setup wizard asks what matters on your first start. Its first page asks which controllers you play with and says what ROCK does for them: Index controllers and Vive wands get ROCK's SteamVR binding. The next pages set the main choices by topic (grabbing, holding weapons, aiming and shooting, grenades and healing, the stick click and menus), then a review saves them. "Use recommended settings" sets the binding and ROCK's recommendation for every option at once. Closing the wizard saves no option, but still sets ROCK's binding for the controllers SteamVR reports unless you chose others. Open it again any time with the Setup Wizard button on ROCK's page in Mods Config FO4 VR.
 
-Everything else, including which button does what (the `[Bindings]` table), is in `ROCK.toml` and the settings menu.
+Everything else, including which button does what (the `[Bindings]` table), is in `ROCK.toml` and on ROCK's page in Mods Config FO4 VR.
 
 The wizard opens by itself the first time you play with this ROCK, and again when an update brings something new to show: 10 seconds after you are in the game with no menu, message box, loading screen or scene in the way. On a new game it waits until you have left the mirror. If a message box or menu interrupts it, it comes back where you were once the game is free again. `ShownEdition` in `[SetupWizard]` records what you have seen; set it to 0 to see the wizard again at the next game start.
 

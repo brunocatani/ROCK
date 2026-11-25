@@ -10,8 +10,6 @@
 #include <RPS_UI_Framework/Framework.h>
 #include <RPS_UI_Framework/ImGuiBuild.h>
 #include <RPS_UI_Framework/Input.h>
-#include <RPS_UI_Framework/SettingsMenu.h>
-#include <RPS_UI_Framework/ThemeStyle.h>
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -31,7 +29,6 @@ namespace rock::setup_wizard
     namespace
     {
         namespace fw = rpsui::api::framework;
-        namespace menu = rpsui::api::settings_menu;
         using rpsui::api::Result;
 
         // Game units (about 70 per metre): the panel's width, its distance in front
@@ -68,10 +65,6 @@ namespace rock::setup_wizard
             std::uint64_t owner{ 0 };
             std::uint64_t panel{ 0 };
             std::uint64_t presentationSequence{ 1 };
-            // ROCK's tab in RPS UI's menu, asked for once.
-            const menu::Api* menu{ nullptr };
-            std::uint64_t menuPage{ 0 };
-            bool menuPageTried{ false };
             rps_ui::BindGate bindGate;
             bool absentReported{ false };
             std::atomic<const rpsui::api::input::Api*> input{ nullptr };
@@ -98,8 +91,6 @@ namespace rock::setup_wizard
         }
 
         std::atomic<bool> g_openRequested{ false };
-        // Set by the menu tab's button on the render thread, taken by update().
-        std::atomic<bool> g_menuPagePressed{ false };
 
         // Game thread, every input frame: keeps the controllers captured while open, so the
         // game and ROCK's gameplay ignore the buttons that work the panel.
@@ -171,56 +162,6 @@ namespace rock::setup_wizard
             ROCK_LOG_INFO(Config, "Setup wizard registered RPS UI panel {} (input {})", s.panel,
                 s.inputToken.load(std::memory_order_acquire));
             return true;
-        }
-
-        // Render thread: ROCK's tab in the menu RobCo PALM's Config opens. The menu's context
-        // already carries the theme; the button only raises a flag for the frame thread.
-        bool RPSUI_CALL drawMenuPage(const menu::PageDrawFrame* frame, void*) noexcept
-        {
-            if (!frame || frame->size < sizeof(*frame) || !frame->theme) return false;
-            try {
-                RPSUI_IMGUI_BIND(frame->imgui);
-                const auto& theme = *frame->theme;
-                ImGui::PushFont(static_cast<ImFont*>(frame->fonts[static_cast<std::size_t>(fw::FontRole::Strong)]), theme.titleFontSize);
-                ImGui::TextUnformatted("ROCK");
-                ImGui::PopFont();
-                ImGui::Dummy({ 0.0f, theme.spacing });
-                ImGui::PushStyleColor(ImGuiCol_Text, rpsui::imgui_host::color(theme.textMuted));
-                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
-                ImGui::TextUnformatted("The setup wizard walks you through ROCK's controls and main options. "
-                                       "ROCK's settings are on its page in Mods Config FO4 VR.");
-                ImGui::PopTextWrapPos();
-                ImGui::PopStyleColor();
-                ImGui::Dummy({ 0.0f, theme.spacing * 2.0f });
-                if (ImGui::Button("Setup wizard", { theme.targetHeight * 7.0f, theme.targetHeight * 1.15f }))
-                    g_menuPagePressed.store(true, std::memory_order_release);
-            } catch (...) {
-                ROCK_LOG_SAMPLE_WARN(Config, 5000, "Setup wizard menu tab draw failed");
-            }
-            return false;
-        }
-
-        // Frame thread, once after the wizard's panel is bound. A menu that refuses the tab
-        // leaves the wizard on ROCK's Mods Config page and its automatic opening.
-        void addMenuPage(State& s)
-        {
-            s.menuPageTried = true;
-            if (rpsui::api::acquire(rps_ui::query(), s.menu) != Result::Ok || !s.menu) {
-                s.menu = nullptr;
-                ROCK_LOG_WARN(Config, "Setup wizard has no menu tab: RPS UI's settings menu could not be bound");
-                return;
-            }
-            menu::PageRegistration page{};
-            std::snprintf(page.pageId, sizeof(page.pageId), "%s", "rock.setup");
-            std::snprintf(page.title, sizeof(page.title), "%s", "ROCK");
-            // After RobCo PALM's wheel pages (10 and 20), which the menu opens on.
-            page.sortOrder = 100;
-            page.imgui = RPSUI_IMGUI_BUILD();
-            page.drawCallback = &drawMenuPage;
-            if (const auto result = s.menu->registerPage(s.owner, &page, &s.menuPage); result != Result::Ok) {
-                s.menuPage = 0;
-                ROCK_LOG_WARN(Config, "Setup wizard menu tab refused by RPS UI ({})", static_cast<std::uint32_t>(result));
-            }
         }
 
         [[nodiscard]] bool present(State& s, bool open)
@@ -367,12 +308,6 @@ namespace rock::setup_wizard
     {
         auto& s = state();
         try {
-            if (!s.menuPageTried && !s.bindGate.absent() && bind(s)) addMenuPage(s);
-            // The tab's button: the menu steps aside and the wizard opens in its place.
-            if (g_menuPagePressed.exchange(false, std::memory_order_acq_rel)) {
-                if (s.menu) (void)s.menu->close(s.owner);
-                g_openRequested.store(true, std::memory_order_release);
-            }
             if (g_openRequested.load(std::memory_order_acquire)) {
                 if (!bind(s)) {
                     if (!rps_ui::query()) g_openRequested.store(false, std::memory_order_release);

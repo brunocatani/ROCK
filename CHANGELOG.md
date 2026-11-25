@@ -17,6 +17,11 @@
   contact normal** of a body that has turned or is off its centre of mass. No
   record or table change.
 
+### Removed
+
+- **The ROCK tab of RobCo PALM's Config**, with the menu it was in. The setup wizard
+  opens from ROCK's page in Mods Config FO4 VR.
+
 ## v1.0.4
 
 ### Added
