@@ -14,6 +14,8 @@
  * designation instead, as ammunition boxes print it, about kCaliberBudget
  * characters, the width of the short vanilla names (".38", "10mm"):
  *
+ *  - Sort tags and nicknames go: "[AmmoCaliber]", a "(...)" part and a
+ *    quoted nickname ("6.5mm Winchester Short Magnum \"Leopard\"").
  *  - Generic words go: a trailing "Round", "Ammo", "Cartridge" or "Shell"
  *    (singular or plural), and "Caliber" anywhere (".50 Caliber" -> ".50").
  *  - The designation is the first word holding a digit, with a following
@@ -28,7 +30,8 @@
  *    else the initials of several words (".22 Long Rifle" -> ".22 LR",
  *    ".40 Smith & Wesson" -> ".40 S&W"), else the one word or its usual
  *    short form (".357 Magnum" -> ".357 Mag"). A designation in "mm" drops
- *    it when that lets them fit ("6.8mm Remington SPC" -> "6.8 SPC").
+ *    it when that lets a code or initials fit ("6.8mm Remington SPC" ->
+ *    "6.8 SPC"), never for a word ("6mm Dasher" -> "6mm").
  *  - A name without a digit stays whole within the budget, otherwise it
  *    keeps its first all-caps word ("BB Pellet" -> "BB"), else its last
  *    word, the thing it is ("Flamer Fuel" -> "Fuel").
@@ -90,11 +93,13 @@ namespace rock::ammo_counters
             std::array<std::string_view, kMaxWords> items{};
             std::size_t count{ 0 };
 
-            void erase(const std::size_t index) noexcept
+            // Erases words first..last.
+            void erase(const std::size_t first, const std::size_t last) noexcept
             {
-                std::copy(items.begin() + index + 1, items.begin() + count, items.begin() + index);
-                --count;
+                std::copy(items.begin() + last + 1, items.begin() + count, items.begin() + first);
+                count -= last - first + 1;
             }
+            void erase(const std::size_t index) noexcept { erase(index, index); }
         };
 
         inline Words split(const std::string_view name) noexcept
@@ -158,12 +163,13 @@ namespace rock::ammo_counters
 
         inline std::string_view shortForm(const std::string_view word) noexcept
         {
-            constexpr std::array<std::array<std::string_view, 2>, 5> kShortForms{ {
+            constexpr std::array<std::array<std::string_view, 2>, 6> kShortForms{ {
                 { "Magnum", "Mag" },
                 { "Remington", "Rem" },
                 { "Winchester", "Win" },
                 { "Carbine", "Carb" },
                 { "Automatic", "Auto" },
+                { "Special", "Spl" },
             } };
             for (const auto& [full, abbreviated] : kShortForms) {
                 if (same(word, full))
@@ -226,6 +232,23 @@ namespace rock::ammo_counters
         inline Text compact(Words words) noexcept
         {
             Text text{};
+            // Sort tags and nicknames go: "[AmmoCaliber]", "(Old)", "\"Leopard\"".
+            for (std::size_t i = 0; i < words.count;) {
+                const char open = words.items[i].front();
+                const char close = open == '[' ? ']' : open == '(' ? ')' : open == '"' ? '"' : '\0';
+                std::size_t last = i;
+                const auto closes = [&](const std::size_t at) {
+                    const auto word = words.items[at];
+                    return word.back() == close && (at > i || word.size() > 1);
+                };
+                while (close != '\0' && last < words.count && !closes(last))
+                    ++last;
+                if (close == '\0' || last == words.count || last - i + 1 == words.count) {
+                    ++i;
+                    continue;
+                }
+                words.erase(i, last);
+            }
             const auto generic = [](const std::string_view word) {
                 for (const std::string_view candidate : { "round", "rounds", "ammo", "cartridge", "cartridges", "shell", "shells" }) {
                     if (same(word, candidate))
@@ -288,8 +311,11 @@ namespace rock::ammo_counters
                 join(text, designation.view(), extra.view());
                 return text;
             }
+            // Only codes and initials stand beside a bare number ("6.8 SPC");
+            // a word keeps the unit ("6mm Dasher" shows "6mm").
+            const bool code = words.count - rest > 1 || (words.count - rest == 1 && isAcronym(words.items[rest]));
             const auto shorter = withoutMillimetres(designation.view());
-            if (shorter.size != designation.size && fits(shorter.view(), extra.view())) {
+            if (code && shorter.size != designation.size && fits(shorter.view(), extra.view())) {
                 join(text, shorter.view(), extra.view());
                 return text;
             }
