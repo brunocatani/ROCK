@@ -213,11 +213,10 @@ target_include_directories(rock_imgui PUBLIC "${ROCK_IMGUI_DIR}" "${RPSUI_INCLUD
 target_compile_features(rock_imgui PUBLIC cxx_std_23)
 target_compile_definitions(rock_imgui PUBLIC IMGUI_USER_CONFIG="RPS_UI_Framework/ImGuiBuild.h")
 target_link_libraries(${PROJECT_NAME} PRIVATE rock_imgui)
-# RobCo PALM's Developer wheel API; ROCK binds it at runtime for its capture switch and
-# works without PALM.
+# RobCo PALM's discovery header: ROCK checks whether PALM is loaded and works without it.
 set(PALM_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/ROCK_Whell_Menu/include" CACHE PATH
   "RobCo PALM public header directory.")
-if(NOT EXISTS "${PALM_INCLUDE_DIR}/RobCoPALM/Developer.h")
+if(NOT EXISTS "${PALM_INCLUDE_DIR}/RobCoPALM/Discovery.h")
   message(FATAL_ERROR ">> RobCo PALM headers not found at '${PALM_INCLUDE_DIR}'; set PALM_INCLUDE_DIR.")
 endif()
 target_include_directories(${PROJECT_NAME} PRIVATE "${PALM_INCLUDE_DIR}")

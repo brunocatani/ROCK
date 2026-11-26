@@ -217,7 +217,7 @@ Start with the [API overview](docs/api/Overview.md), then the page of each inter
 | --- | --- | --- |
 | [CommonLibF4VR](https://github.com/brunocatani/CommonLibF4VR) (`master`) | Linked directly: engine types, Havok, F4SE, relocation | `COMMON_LIB_F4VR_PATH` |
 | [RPS UI Framework](https://github.com/brunocatani/RPS_UI_Framework) | Headers in `include/RPS_UI_Framework/`: world drawing and number overlays, bound at runtime | `RPSUI_INCLUDE_DIR` (its `include` folder) |
-| [RobCo PALM](https://github.com/brunocatani/RobCo_PALM) | Header `include/RobCoPALM/Developer.h`: the Developer wheel capture switch, bound at runtime | `PALM_INCLUDE_DIR` (its `include` folder) |
+| [RobCo PALM](https://github.com/brunocatani/RobCo_PALM) | Header `include/RobCoPALM/Discovery.h`: PALM's module name, to see whether PALM is loaded | `PALM_INCLUDE_DIR` (its `include` folder) |
 | [RPS Framework](https://github.com/brunocatani/RPS_Framework) | Linked statically: the settings files (`RPS::Settings`); header `RPS/Runtime/CallerModule.h`: names the DLL behind a refused request in the log | `RPSFramework_DIR` (the package its `custom-fast` build stages, `build-fast/stage/lib/cmake/RPSFramework`) |
 
 ROCK is built and tested against that CommonLibF4VR fork: ArthurHub's [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) with Fallout 4 VR additions. It links nothing from RPS UI Framework or RobCo PALM and binds them at runtime; RPS Framework is linked into `ROCK.dll`. F4VR-CommonFramework is not needed.

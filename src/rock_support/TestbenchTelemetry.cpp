@@ -3,8 +3,6 @@
 
 #include "physics-interaction/PhysicsLog.h"
 
-#include <RobCoPALM/Client.h>
-#include <RobCoPALM/Developer.h>
 #include <Windows.h>
 
 #include <algorithm>
@@ -27,13 +25,10 @@ namespace rock::testbench_telemetry
         constexpr std::size_t kEventQueueCapacity = 512;
         constexpr std::uint32_t kHeaderProducerAlive = 1u << 0;
         constexpr std::uint32_t kHeaderCaptureRunning = 1u << 1;
-        constexpr char kWheelCaptureId[] = "rock.testbench.capture";
-        constexpr char kWheelCaptureLabel[] = "ROCK: Start/stop capture";
 
-        // PALM's game task sets the press; the frame thread applies it and owns s_captureActive.
+        // Mods Config's press sets it; the frame thread applies it and owns s_captureActive.
         std::atomic<bool> s_capturePressPending{ false };
         bool s_captureActive = false;
-        palm::api::developer::Handle s_wheelCaptureAction{};
 
         enum class RecordType : std::uint16_t
         {
@@ -360,38 +355,7 @@ namespace rock::testbench_telemetry
 
     bool enabled() noexcept { return s_enabled.load(std::memory_order_relaxed); }
 
-    void registerWheelCapture() noexcept
-    {
-        if (s_wheelCaptureAction) {
-            return;
-        }
-        const auto module = GetModuleHandleW(palm::api::kModuleName);
-        const auto query = module
-            ? reinterpret_cast<palm::api::QueryInterfaceV1>(GetProcAddress(module, palm::api::kQueryExportName))
-            : nullptr;
-        const palm::api::developer::Api* api{};
-        if (palm::api::acquire(query, api) != palm::api::Result::Ok) {
-            return;
-        }
-        if (!api->enabled()) {
-            ROCK_LOG_INFO(Init,
-                "Testbench capture switch not registered: PALM's Developer wheel is off (PALM.toml [Developer] "
-                "Enabled)");
-            return;
-        }
-        palm::api::developer::Action action;
-        strcpy_s(action.id, kWheelCaptureId);
-        strcpy_s(action.label, kWheelCaptureLabel);
-        action.invoke = [](void*) noexcept { s_capturePressPending.store(true, std::memory_order_release); };
-        const auto result = api->registerAction(&action, &s_wheelCaptureAction);
-        if (result == palm::api::Result::Ok) {
-            ROCK_LOG_INFO(Init, "Testbench capture switch registered in PALM's Developer wheel");
-        } else {
-            ROCK_LOG_WARN(Init,
-                "Testbench capture switch rejected by PALM's Developer wheel (result {}); existing actions kept",
-                static_cast<unsigned>(result));
-        }
-    }
+    void requestCaptureToggle() noexcept { s_capturePressPending.store(true, std::memory_order_release); }
 
     std::optional<bool> takeCaptureToggle() noexcept
     {
@@ -399,7 +363,7 @@ namespace rock::testbench_telemetry
             return std::nullopt;
         }
         s_captureActive = !s_captureActive;
-        ROCK_LOG_INFO(Input, "Testbench capture {} from PALM's Developer wheel",
+        ROCK_LOG_INFO(Input, "Testbench capture {} from Mods Config",
             s_captureActive ? "started" : "stopped");
         return s_captureActive;
     }

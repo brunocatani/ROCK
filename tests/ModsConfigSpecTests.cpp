@@ -377,7 +377,21 @@ namespace
     }
 
     /**
-     * The Developer page, always under ROCK's page: ROCK.toml's log level, then ROCK_Developer.toml's options, a
+     * The testbench capture button, under the log level.
+     */
+    ordered_json captureButton()
+    {
+        return ordered_json::parse(R"({
+            "type": "button",
+            "text": "Testbench Capture",
+            "help": "Starts a testbench capture, or stops the running one: ROCK's telemetry section stays open and tells the external recorder to record.",
+            "buttonText": "Start or Stop",
+            "action": { "type": "CallNativeFunction", "function": "toggleTestbenchCapture" }
+        })");
+    }
+
+    /**
+     * The Developer page, always under ROCK's page: ROCK.toml's log level, the testbench capture button, then ROCK_Developer.toml's options, a
      * sub-page per category holding every developer option in catalog order.
      */
     ordered_json developerPage(std::span<const SettingDefault> defaults)
@@ -410,7 +424,7 @@ namespace
         page["id"] = std::string(kDeveloperPageId);
         page["help"] = "ROCK's developer options: tuning, debug drawing and logs.";
         page["defaultFile"] = "developer";
-        page["content"] = ordered_json::array({ intro, logLevelRow() });
+        page["content"] = ordered_json::array({ intro, logLevelRow(), captureButton() });
         page["pages"] = std::move(pages);
         return page;
     }

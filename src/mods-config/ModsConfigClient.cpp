@@ -4,6 +4,7 @@
 #include "mods-config/ModsConfigFO4Api.h"
 #include "physics-interaction/PhysicsLog.h"
 #include "physics-interaction/input/InputRemapRuntime.h"
+#include "rock_support/TestbenchTelemetry.h"
 #include "setup-wizard/SetupWizard.h"
 
 #include <format>
@@ -27,6 +28,7 @@ namespace rock::mods_config_client
         constexpr const char* kModName = "ROCK";
         // The function the page's Setup Wizard button runs.
         constexpr const char* kOpenSetupWizard = "openSetupWizard";
+        constexpr const char* kToggleTestbenchCapture = "toggleTestbenchCapture";
 
         // The spec ids of the rows ROCK shows in the world while the ray is on them.
         constexpr const char* kGripZoneMarkerSizeId = "gripZoneMarkerSize";
@@ -36,6 +38,15 @@ namespace rock::mods_config_client
         bool g_restorePending = false;
         // Game thread: the row the ray is on, read at FrameBegin.
         PointedPreview g_pointedPreview = PointedPreview::None;
+
+        /**
+         * The Developer page's Testbench Capture: starts a capture, or stops the running one, on the next frame.
+         */
+        FunctionResult toggleTestbenchCapture(const Params&)
+        {
+            testbench_telemetry::requestCaptureToggle();
+            return { .done = true };
+        }
 
         /**
          * Opens the setup wizard (or takes the one already up) and minimizes the menu for it. Fails only without
@@ -122,6 +133,7 @@ namespace rock::mods_config_client
         try {
             auto& client = ModsConfigFO4Client::get();
             client.addFunction(kOpenSetupWizard, &openSetupWizard);
+            client.addFunction(kToggleTestbenchCapture, &toggleTestbenchCapture);
             client.addState("modVersion", [] { return std::optional<Value>(std::string(Version::NAME)); });
             client.subscribeToChanges(&onChange);
             client.subscribeToSaves(&onSaved);

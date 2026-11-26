@@ -1399,7 +1399,6 @@ namespace
             logger::info("ROCK: Config loaded.");
             rock::input_remap_runtime::installInputRemapHooks();
             rock::debug::Install();
-            rock::testbench_telemetry::registerWheelCapture();
 
             s_frikAvailable = true;
 

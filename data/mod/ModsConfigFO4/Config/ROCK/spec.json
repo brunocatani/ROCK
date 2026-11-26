@@ -1149,6 +1149,13 @@
             ]
           },
           "storage": { "file": "config", "path": ["Logging", "LogLevel"] }
+        },
+        {
+          "type": "button",
+          "text": "Testbench Capture",
+          "help": "Starts a testbench capture, or stops the running one: ROCK's telemetry section stays open and tells the external recorder to record.",
+          "buttonText": "Start or Stop",
+          "action": { "type": "CallNativeFunction", "function": "toggleTestbenchCapture" }
         }
       ],
       "pages": [
