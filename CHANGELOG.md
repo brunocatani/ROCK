@@ -16,6 +16,10 @@
 - **For mod authors: Touch 2.0 reports the real coordinate, contact point and
   contact normal** of a body that has turned or is off its centre of mass. No
   record or table change.
+- **Long ammunition names no longer stretch the ammo counter.** The counter
+  shows the cartridge's short designation, as ammo boxes print it: "9x19mm
+  Parabellum Round" shows "9x19", ".22 Winchester Magnum Rimfire" ".22 WMR",
+  ".40 Smith & Wesson" ".40 S&W", ".357 Magnum" ".357 Mag".
 
 ### Changed
 

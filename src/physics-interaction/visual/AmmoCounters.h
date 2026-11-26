@@ -1,21 +1,20 @@
 #pragma once
 
+#include "physics-interaction/visual/AmmoCaliberLabelPolicy.h"
 #include "physics-interaction/visual/AmmoCounterPose.h"
 
 #include <ROCK/Weapon.h>
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
-#include <string_view>
 
 /*
  * ROCK's ammo counters: one per firing weapon, on the hand that holds its
  * firing grip, drawn as RPS UI number overlays. RPS UI is optional; without
  * it nothing is drawn here and the vanilla counter stays.
  *
- * Every style names the weapon's ammunition (its ammo form's name) as the
- * overlays' own label (RPS UI NumberOverlay 2.1), in the digits' face, color
+ * Every style names the weapon's ammunition (its ammo form's name, shortened
+ * to the cartridge designation by AmmoCaliberLabelPolicy.h) as the overlays' own label (RPS UI NumberOverlay 2.1), in the digits' face, color
  * and fade: the HUD styles beside the reserve row in the chamber column,
  * Minimal after the reserve rounds. With RPS UI 2.0 the counters show no
  * caliber.
@@ -35,17 +34,6 @@ namespace rock::ammo_counters
         // per hand in the HUD color and opacity.
         Vanilla = 3,
     };
-
-    // The caliber label: at most kCaliberCapacity - 1 characters, terminated.
-    inline constexpr std::size_t kCaliberCapacity = 24;
-    using Caliber = std::array<char, kCaliberCapacity>;
-
-    // The label for an ammo form's display name: surrounding spaces trimmed
-    // and a trailing "Round", "Rounds" or "Ammo" word dropped when another
-    // word precedes it (".38 Round" shows ".38"). A longer name ends at its
-    // last whole word that fits. Empty for an empty name. It builds a string,
-    // so callers keep the result instead of calling it every frame.
-    [[nodiscard]] Caliber caliberLabel(std::string_view name) noexcept;
 
     struct HandCounter
     {

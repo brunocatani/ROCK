@@ -202,40 +202,6 @@ namespace rock::ammo_counters
         }
     }
 
-    Caliber caliberLabel(std::string_view name) noexcept
-    {
-        const auto isSpace = [](const char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
-        const auto trim = [&](std::string_view value) {
-            while (!value.empty() && isSpace(value.front()))
-                value.remove_prefix(1);
-            while (!value.empty() && isSpace(value.back()))
-                value.remove_suffix(1);
-            return value;
-        };
-        const auto lower = [](const char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
-        name = trim(name);
-        for (const std::string_view word : { std::string_view{ "round" }, std::string_view{ "rounds" },
-                 std::string_view{ "ammo" } }) {
-            if (name.size() <= word.size() + 1 || !isSpace(name[name.size() - word.size() - 1]))
-                continue;
-            const auto tail = name.substr(name.size() - word.size());
-            if (std::equal(tail.begin(), tail.end(), word.begin(), [&](char a, char b) { return lower(a) == b; })) {
-                name = trim(name.substr(0, name.size() - word.size()));
-                break;
-            }
-        }
-        if (name.size() >= kCaliberCapacity) {
-            // The last space among the first kCaliberCapacity characters ends
-            // the last whole word that fits; without one the name is cut.
-            const auto space = name.substr(0, kCaliberCapacity).find_last_of(" \t");
-            name = space == std::string_view::npos || space == 0 ? name.substr(0, kCaliberCapacity - 1)
-                                                                 : trim(name.substr(0, space));
-        }
-        Caliber label{};
-        std::memcpy(label.data(), name.data(), name.size());
-        return label;
-    }
-
     bool update(const std::array<HandCounter, 2>& hands, const Style style,
         const std::array<float, 3>& hudColor) noexcept
     {
