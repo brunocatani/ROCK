@@ -167,14 +167,14 @@ Settings are edited in game with [Mods Config FO4 VR](https://www.nexusmods.com/
 
 | Page | What's there |
 | --- | --- |
-| **ROCK** (front page) | Help, a link to this wiki, the **Setup Wizard** button, the log level and Show Developer Pages. |
+| **ROCK** (front page) | Help, a link to this wiki, and the **Setup Wizard** button. |
 | **Interaction** | Grab Direction, Far Grab Style, hand collision, grab highlight, quick loot and prompt placement, Immersive Aid. |
 | **Weapon Equipping** | Picking up and letting go of any weapon (Auto Equip, grab and release modes), Default Hand, and folded fine-tuning for grip zones and left-hand firing. |
 | **Gun Handling** | The ammo counter, grips (Grab Anywhere on Weapon, FRIK Weapon Offsets, FRIK Built-in Offsets), aim (Gunstock Mode, Gunstock Centering, shake and scoped filtering, Immersive Scopes) and the bipod. |
 | **Gun Recoil** | Immersive Recoil, laser recoil, and recoil strength per weapon type for one and two hands. |
 | **Melee and Grenades** | Melee grip angle, swing and gun bash speeds, Immersive Grenades and the grenade fuse. |
 | **Controls** | Block VATS, ROCK's SteamVR binding offer, which function is on which button, and the button layout of each hand. |
-| **Developer** | Shown with Show Developer Pages: tuning, debug drawing and logs. It edits `ROCK_Developer.toml`. |
+| **Developer** | The log level, tuning, debug drawing and logs. Its developer options are kept in `ROCK_Developer.toml`. |
 
 ### The setup wizard
 

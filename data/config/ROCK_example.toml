@@ -421,10 +421,3 @@ VanillaGunBashSpeed = 400.0
 ## 0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. 5 = Critical. 6 = Off.
 ## Trace and Debug write a lot and can cost frame time; keep Info for normal play.
 LogLevel = 2
-
-## === 14. Developer ===
-[Developer]
-## Show Developer Pages
-## Shows the Developer page on ROCK's page in Mods Config FO4 VR, which edits ROCK_Developer.toml.
-## Only Mods Config reads this option.
-ShowDeveloperPages = false

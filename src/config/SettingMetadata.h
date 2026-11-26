@@ -379,10 +379,6 @@ namespace rock::config
             "Log Level\nHow much ROCK writes to ROCK.log.\n0 = Trace. 1 = Debug. 2 = Info. 3 = Warn. 4 = Error. "
             "5 = Critical. 6 = Off.\nTrace and Debug write a lot and can cost frame time; keep Info for normal play.",
             Group::Player },
-        { "Developer", "ShowDeveloperPages", "14. Developer",
-            "Show Developer Pages\nShows the Developer page on ROCK's page in Mods Config FO4 VR, which edits "
-            "ROCK_Developer.toml.\nOnly Mods Config reads this option.",
-            Group::Player },
         { "DeveloperControls", "DeveloperModeEnabled", "01. Developer Controls",
             "Gates advanced/tuning-only features not meant for normal play. Currently:\npressing A while holding an "
             "object records/overwrites a saved grab offset\nfor that object+hand. Saved offsets keep applying on "

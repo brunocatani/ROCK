@@ -430,8 +430,6 @@ namespace rock
         rockDeveloperModeEnabled = ini.boolean("DeveloperControls", "DeveloperModeEnabled", rockDeveloperModeEnabled);
         rockLogLevel = logging_policy::clampLogLevel(
             static_cast<int>(ini.integer("Logging", "LogLevel", rockLogLevel)));
-        // Declared for the catalog only: Mods Config reads it to show ROCK's Developer page.
-        (void)ini.boolean("Developer", "ShowDeveloperPages", false);
         rockLogPattern = ini.text("LoggingAndProfiling", "LogPattern", rockLogPattern.c_str());
         if (rockLogPattern.empty()) {
             rockLogPattern = logging_policy::DefaultLogPattern;

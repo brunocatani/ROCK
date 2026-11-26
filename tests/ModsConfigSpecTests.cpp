@@ -72,7 +72,7 @@ namespace
 
     /**
      * Collects every row with a storage, from the front page, its sections and every page and sub-page, each with
-     * its file: the nearest defaultFile above it, as Mods Config resolves it.
+     * its file: the storage's own file, else the nearest defaultFile above it, as Mods Config resolves it.
      */
     void collectSettings(const json& node, const std::string& file, std::vector<ShownSetting>& settings)
     {
@@ -85,7 +85,7 @@ namespace
             return;
         const auto own = node.contains("defaultFile") ? node.at("defaultFile").get<std::string>() : file;
         if (node.contains("storage"))
-            settings.push_back({ &node, own });
+            settings.push_back({ &node, node.at("storage").value("file", own) });
         for (const char* child : { "content", "pages" }) {
             if (node.contains(child))
                 collectSettings(node.at(child), own, settings);
@@ -354,8 +354,31 @@ namespace
     }
 
     /**
-     * The Developer page: shown while Show Developer Pages is on, editing ROCK_Developer.toml, with a sub-page per
-     * category holding every developer option in catalog order.
+     * ROCK.toml's log level, at the top of the Developer page.
+     */
+    ordered_json logLevelRow()
+    {
+        return ordered_json::parse(R"({
+            "type": "stepper",
+            "valueType": "int",
+            "text": "Log Level",
+            "help": "How much ROCK writes to ROCK.log.",
+            "default": 2,
+            "valueOptions": {
+                "options": [
+                    { "value": 2, "text": "Info", "help": "The basic log, for normal play." },
+                    { "value": 1, "text": "Debug", "help": "More logs, to find a problem. Can cost frame time." },
+                    { "value": 0, "text": "Trace", "help": "A lot of logs, every frame. Slows the game." },
+                    { "value": 6, "text": "Off", "help": "No log." }
+                ]
+            },
+            "storage": { "file": "config", "path": ["Logging", "LogLevel"] }
+        })");
+    }
+
+    /**
+     * The Developer page, always under ROCK's page: ROCK.toml's log level, then ROCK_Developer.toml's options, a
+     * sub-page per category holding every developer option in catalog order.
      */
     ordered_json developerPage(std::span<const SettingDefault> defaults)
     {
@@ -387,8 +410,7 @@ namespace
         page["id"] = std::string(kDeveloperPageId);
         page["help"] = "ROCK's developer options: tuning, debug drawing and logs.";
         page["defaultFile"] = "developer";
-        page["visibleWhen"] = { { "setting", "showDeveloperPages" }, { "equals", true } };
-        page["content"] = ordered_json::array({ intro });
+        page["content"] = ordered_json::array({ intro, logLevelRow() });
         page["pages"] = std::move(pages);
         return page;
     }
@@ -479,7 +501,6 @@ namespace
      */
     std::string settingName(const json& storage)
     {
-        require(!storage.contains("file"), "a setting names a file; the page edits ROCK.toml only");
         require(storage.contains("path") && storage.at("path").is_array() && storage.at("path").size() >= 2,
             std::format("a setting's storage is not a TOML table and key: {}", storage.dump()));
         std::string name;

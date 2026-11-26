@@ -17,6 +17,11 @@
   contact normal** of a body that has turned or is off its centre of mass. No
   record or table change.
 
+### Changed
+
+- **The Developer page is always under ROCK's page in Mods Config FO4 VR**, with the log level.
+  Show Developer Pages is gone.
+
 ### Removed
 
 - **The ROCK tab of RobCo PALM's Config**, with the menu it was in. The setup wizard

@@ -128,40 +128,6 @@
           "html": true
         }
       ]
-    },
-    { "type": "spacer" },
-    {
-      "type": "section",
-      "text": "Developer",
-      "isCollapsible": true,
-      "collapsed": true,
-      "content": [
-        {
-          "type": "stepper",
-          "valueType": "int",
-          "text": "Log Level",
-          "help": "How much ROCK writes to ROCK.log.",
-          "default": 2,
-          "valueOptions": {
-            "options": [
-              { "value": 2, "text": "Info", "help": "The basic log, for normal play." },
-              { "value": 1, "text": "Debug", "help": "More logs, to find a problem. Can cost frame time." },
-              { "value": 0, "text": "Trace", "help": "A lot of logs, every frame. Slows the game." },
-              { "value": 6, "text": "Off", "help": "No log." }
-            ]
-          },
-          "storage": { "path": ["Logging", "LogLevel"] }
-        },
-        {
-          "type": "switcher",
-          "valueType": "bool",
-          "id": "showDeveloperPages",
-          "text": "Show Developer Pages",
-          "help": "Shows the Developer page, which edits ROCK's developer options in ROCK_Developer.toml.",
-          "default": false,
-          "storage": { "path": ["Developer", "ShowDeveloperPages"] }
-        }
-      ]
     }
   ],
   "pages": [
@@ -1163,11 +1129,26 @@
       "id": "developer",
       "help": "ROCK's developer options: tuning, debug drawing and logs.",
       "defaultFile": "developer",
-      "visibleWhen": { "setting": "showDeveloperPages", "equals": true },
       "content": [
         {
           "type": "text",
           "text": "Developer options tune ROCK and turn on its debug drawing and logs. ROCK_Developer.toml keeps only the options you change: Reset removes one, and the file goes when none remain. Changes show in the game as you make them."
+        },
+        {
+          "type": "stepper",
+          "valueType": "int",
+          "text": "Log Level",
+          "help": "How much ROCK writes to ROCK.log.",
+          "default": 2,
+          "valueOptions": {
+            "options": [
+              { "value": 2, "text": "Info", "help": "The basic log, for normal play." },
+              { "value": 1, "text": "Debug", "help": "More logs, to find a problem. Can cost frame time." },
+              { "value": 0, "text": "Trace", "help": "A lot of logs, every frame. Slows the game." },
+              { "value": 6, "text": "Off", "help": "No log." }
+            ]
+          },
+          "storage": { "file": "config", "path": ["Logging", "LogLevel"] }
         }
       ],
       "pages": [
